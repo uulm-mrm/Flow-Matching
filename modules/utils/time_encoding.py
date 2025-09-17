@@ -25,13 +25,13 @@ class SinusoidalTimeEmbedding(nn.Module):
     def forward(self, t: Tensor) -> Tensor:
         """
         Args:
-            t (Tensor): tensor in size (B,)
+            t (Tensor): tensor in size (B,) or ()
 
         Returns:
             Tensor: time embedded to (B, D)
         """
 
-        t = t.unsqueeze(1)
+        t = t.reshape(-1, 1)
 
         # sin and cos emb
         angles = t * self.freqs  # type: ignore
