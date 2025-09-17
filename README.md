@@ -15,13 +15,13 @@ This section is for explaining the building blocks of the FM model. All of this 
 
 A probability path is the name of the path a point takes while travelling from `t=0` to `t=1`. This path is ideally affine (and this is how it is implemented), because straight simple paths are easy to integrate with low error. The affine path is defined by a function that decides where a point should be, this function is defined as:
 
-$$ x_t = \alpha(t) \: x_1 + \sigma(t) \: x_0 $$
+$$ x_t = \alpha(t)  x_1 + \sigma(t)  x_0 $$
 
 Where $x_1$ is the point at `t=1`, usually sampled from the actual dataset, while $x_0$ is the point at `t=0` which is usually sampled from Gaussian noise $\mathcal{N}(\bf{0}, I)$, or any other arbitrary noise function. Gaussians are mostly used since they are affine invariant, and since we're using affine paths, this guy is the best.
 
 Since we're learning vector fields, we're also interested in velocities along these probability paths. And since velocity is just the $\frac{d}{dt}x$ we need to find the first derivative over time of the above function for calculating positions along the path.
 
-$$ \dot{x_t} = \alpha'(t) \: x_1 + \sigma'(t) \: x_0 $$
+$$ \dot{x_t} = \alpha'(t)  x_1 + \sigma'(t)  x_0 $$
 
 ### Schedulers
 
