@@ -67,7 +67,8 @@ class Integrator:
 
         ode_options = {"step_size": step_size} if step_size else {}
 
-        sols = odeint(diff_eq, x_init, t, method=method, options=ode_options)
+        with torch.no_grad():
+            sols = odeint(diff_eq, x_init, t, method=method, options=ode_options)
 
         return sols  # type: ignore
 
@@ -144,9 +145,10 @@ class Integrator:
         init_states = (x1, torch.zeros(x1.shape[0], device=x1.device))
         ode_options = {"step_size": step_size} if step_size else {}
 
-        sol, div = odeint(
-            dynamics_eq, init_states, t, method=method, options=ode_options
-        )
+        with torch.no_grad():
+            sol, div = odeint(
+                dynamics_eq, init_states, t, method=method, options=ode_options
+            )
 
         x0 = sol[-1]
         log_p_x0 = log_p0(x0)
