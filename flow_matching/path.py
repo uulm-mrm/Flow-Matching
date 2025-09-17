@@ -2,8 +2,8 @@ from dataclasses import dataclass, field
 
 from torch import Tensor
 
-from scheduler import Scheduler
-from utils import broadcast_to
+from flow_matching.scheduler import Scheduler
+from flow_matching.utils import broadcast_to
 
 
 @dataclass
