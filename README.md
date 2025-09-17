@@ -9,7 +9,7 @@ The actual neural network part of the model is the vector field that pushes poin
 
 ## Theory
 
-This section is for explaining the building blocks of the FM model. All of this is basically made from by following the `Flow Matching Guide and Code` book/paper from Meta.
+This section is for explaining the building blocks of the FM model. All of this is basically made by following the `Flow Matching Guide and Code` book/paper from Meta.
 
 ### Probability paths
 
