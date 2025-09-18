@@ -1,4 +1,5 @@
-examples/mnist/dataset
+examples/mnist/
+!examples/mnist/*.py
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
