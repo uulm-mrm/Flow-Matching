@@ -3,6 +3,7 @@ from tqdm import tqdm
 import matplotlib.pyplot as plt
 
 import torch
+from torch import Tensor
 from torch.utils.data import DataLoader
 
 from flow_matching import Path, Integrator
@@ -42,15 +43,7 @@ def main():
         for x1, _ in dl:
             optim.zero_grad()
 
-            # add noise to x1, because we sample new x0 noise each step
-            # this will effectively mean the images are a bit blurry overall
-
-            # the other way would be to have a fixed noise pool from the getgo
-            # or have all the x0 points converge to x1 points
-            # but the cardinality of x0 and x1 is then way off
             x1 = x1.to(device)
-            x1_noise = torch.randn_like(x1) * torch.tensor(0.05**0.5, device=device)
-            x1 += x1_noise
 
             # sample x0
             x0 = torch.randn_like(x1)
@@ -76,7 +69,8 @@ def main():
 
     # generate a few samples
     step_size = 0
-    imgs = 16
+    imgs = 1024
+    top_k = 16
 
     x0 = torch.randn((imgs, 1, 28, 28), device=device)
     # we're interested in the end product not the path so no anchors
@@ -86,15 +80,26 @@ def main():
     sols = integrator.sample(x0, t, method="midpoint", step_size=step_size)
     fake_imgs = sols[-1]  # take the samples at t=1
 
+    # find 16 images with the lowest losses compared to the first digit
+    real_img: Tensor = ds[0][0].to(device).unsqueeze(0)
+
+    # calculate mse vs real image, take the indices from torch.min and sample by them
+    errors = (fake_imgs - real_img).square().sum(dim=(1, 2, 3))
+    sorted_errors = list(sorted(range(imgs), key=lambda idx: errors[idx]))
+    sorted_errors = sorted_errors[:top_k]
+
+    # take lowest top_k
+    fake_imgs = fake_imgs[sorted_errors]
+
     fake_imgs = fake_imgs.cpu().detach().numpy()
     _, axs = plt.subplots(4, 4)
 
     axs = axs.flatten()
-    for i in range(imgs):
+    for i in range(top_k):
         axs[i].imshow(fake_imgs[i, 0], "gray")
         axs[i].set_aspect("equal")
 
-    plt.savefig("./examples/mnist/imgs.png")
+    plt.savefig("./examples/mnist/top_k_imgs.png")
 
 
 if __name__ == "__main__":
