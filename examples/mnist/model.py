@@ -12,22 +12,26 @@ class CNNVF(nn.Module):
         self.time_embed = SinusoidalTimeEmbedding(t_dims)
 
         # downsampling
-        self.conv1 = TimeConditionedConv(1, 16, 3, t_dims)  # B, 16, 14, 14
-        self.conv2 = TimeConditionedConv(16, 32, 3, t_dims)  # B, 32, 7, 7
+        self.conv1 = TimeConditionedConv(1, 32, 3, t_dims)  # B, 32, 14, 14
+        self.conv2 = TimeConditionedConv(32, 64, 3, t_dims)  # B, 64, 7, 7
 
         # fc bottleneck
         self.fc = nn.Sequential(
             nn.Flatten(),
-            nn.Linear(32 * 7 * 7, 256),
+            nn.Linear(64 * 7 * 7, 1024),
             nn.SiLU(),
-            nn.Linear(256, 32 * 7 * 7),
+            nn.Linear(1024, 256),
             nn.SiLU(),
-            nn.Unflatten(1, (32, 7, 7)),
+            nn.Linear(256, 1024),
+            nn.SiLU(),
+            nn.Linear(1024, 64 * 7 * 7),
+            nn.SiLU(),
+            nn.Unflatten(1, (64, 7, 7)),
         )
 
         # upsampling
-        self.upconv1 = TimeConditionedUpConv(32, 16, t_dims)  # B, 16, 14, 14
-        self.upconv2 = TimeConditionedUpConv(16, 1, t_dims)  # B, 1, 28, 28
+        self.upconv1 = TimeConditionedUpConv(64, 32, t_dims)  # B, 32, 14, 14
+        self.upconv2 = TimeConditionedUpConv(32, 1, t_dims)  # B, 1, 28, 28
 
     def forward(self, x: Tensor, t: Tensor) -> Tensor:
         """

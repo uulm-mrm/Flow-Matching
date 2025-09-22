@@ -8,7 +8,7 @@ class EMA(nn.Module):
     """Implements the exponential moving average for parameters of a model,
     Applied as:
         EMA_t = rate * EMA_{t-1} + (1 - rate) * model_param
-    To be used as a model wrapper that updates the ema parameters
+    To be used as a model wrapper that updates the ema parameters or on its own
     """
 
     def __init__(self, model: nn.Module, rate: float = 0.999) -> None:
