@@ -123,3 +123,66 @@ class ConvBlockAttention(nn.Module):
         x = self.cam(x)
 
         return self.sam(x)
+
+
+class ConvMHSA(nn.Module):
+    """Implements convolution multi-head self-attention"""
+
+    def __init__(self, in_c: int, heads: int = 4) -> None:
+        """
+        Args:
+            in_c (int): number of input channels
+            heads (int, optional): number of heads. Defaults to 4.
+        """
+        super().__init__()
+
+        assert in_c % heads == 0, "Heads must divide input cahnnels"
+        self.heads = heads
+        self.head_dims = in_c // heads
+
+        self.attn_scale = 1 / (self.head_dims**0.5)
+
+        # linear projections for qkv, with squeezed space so conv1d
+        # bit quicker to work in 1D with spatial flattened than to work in 2D
+        self.qkv = nn.Conv1d(in_channels=in_c, out_channels=in_c * 3, kernel_size=1)
+
+        # attn projection and scaling (same as starting with the output projection zeroed-out)
+        self.out_proj = nn.Conv1d(in_c, in_c, kernel_size=1)
+        self.gamma = nn.Parameter(torch.zeros(1))
+
+    def forward(self, x: Tensor) -> Tensor:
+        """
+        Args:
+            x (Tensor): tensor of size (B, C, H, W)
+
+        Returns:
+            Tensor: tensor of size (B, C, H, W) after self attention
+        """
+        b, c, h, w = x.size()
+        x = x.reshape(b, c, -1)
+
+        # project qkv
+        q, k, v = self.qkv(x).chunk(3, dim=1)
+
+        # (batch * heads, head_d, spatial) @ (batch * heads, head_d, spatial) =
+        # (batch * heads, spatial, spatial)
+        attn_w = torch.einsum(
+            "bcn,bcm->bnm",  # a lil bit quicker to mul separately than div later
+            (q * self.attn_scale).view(b * self.heads, self.head_dims, h * w),
+            (k * self.attn_scale).view(b * self.heads, self.head_dims, h * w),
+        )
+        attn_w = F.softmax(attn_w, dim=-1)
+
+        # (batch * heads, spatial, spatial) @ (batch * heads, head_d, spatial) =
+        # (batch * heads, head_d, spatial) -> (batch, heads * head_d, spatial)
+        # heads * heads_d == in_c
+        attn = torch.einsum(
+            "bnm,bcm->bcn", attn_w, v.reshape(b * self.heads, self.head_dims, h * w)
+        )
+        attn = attn.reshape(b, -1, h * w)
+
+        # project attn out
+        attn = self.out_proj(attn)
+
+        # since attn and x are (b, in_c, spatial) reshape only in the end
+        return (self.gamma * attn + x).reshape(b, c, h, w)

@@ -1,6 +1,6 @@
 from torch import Tensor, nn
 
-from modules.cnn import TimeConditionedConv, TimeConditionedUpConv, ConvBlockAttention
+from modules.cnn import TimeConditionedConv, TimeConditionedUpConv, ConvMHSA
 from modules.utils import SinusoidalTimeEmbedding
 
 
@@ -13,10 +13,10 @@ class CNNVF(nn.Module):
 
         # downsampling
         self.conv1 = TimeConditionedConv(1, 32, 3, t_dims)  # B, 32, 14, 14
-        self.attn1 = ConvBlockAttention(32, 16, 7)
+        self.attn1 = ConvMHSA(in_c=32, heads=4)
 
         self.conv2 = TimeConditionedConv(32, 64, 3, t_dims)  # B, 64, 7, 7
-        self.attn2 = ConvBlockAttention(64, 16, 7)
+        self.attn2 = ConvMHSA(in_c=64, heads=8)
 
         # fc bottleneck
         self.fc = nn.Sequential(
@@ -34,7 +34,7 @@ class CNNVF(nn.Module):
 
         # upsampling
         self.upconv1 = TimeConditionedUpConv(64, 32, t_dims)  # B, 32, 14, 14
-        self.upattn1 = ConvBlockAttention(32, 16, 7)
+        self.upattn1 = ConvMHSA(in_c=32, heads=4)
 
         self.upconv2 = TimeConditionedUpConv(32, 1, t_dims)  # B, 1, 28, 28
 
