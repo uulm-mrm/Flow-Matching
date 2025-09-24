@@ -8,6 +8,7 @@ from torch.utils.data import DataLoader
 
 from flow_matching import Path, Integrator
 from flow_matching.scheduler import OTScheduler
+from flow_matching.distributions import GaussianMixture
 
 from modules.utils import EMA
 
@@ -33,6 +34,10 @@ def main():
     ds = sample_mnist(ds, classes)
     dl = DataLoader(ds, batch_size=batch_size, shuffle=False, drop_last=False)
 
+    # dims = C * H * W
+    # you may need to wait for this thing to optimize itself nicely in higher dims
+    x0_sampler = GaussianMixture(n=8, dims=1 * 28 * 28, sigma=0.5, r=1.5, device=device)
+
     # model prep
     vf = CNNVF(t_dims=t_dims).to(device)
     ema = EMA(vf, rate=0.999).to(device)
@@ -50,7 +55,8 @@ def main():
             x1 = x1.to(device)
 
             # sample x0
-            x0 = torch.randn_like(x1)
+            # x0 = torch.randn_like(x1)
+            x0 = x0_sampler.sample(x1.size(0)).reshape(-1, 1, 28, 28)
 
             # sample time
             t = torch.rand((x1.shape[0],), dtype=torch.float32, device=device)
