@@ -109,9 +109,9 @@ class Integrator:
             return self.vector_field(x, t, **vf_extras)
 
         # the dynamics function of the system
-        # two to find are the positions at t and the negative divergence at t
+        # two to find are the positions at t and the divergence at t
         # the positions will then be used to calculate log p0
-        # and the negative divergence will be added to it
+        # and the divergence will be added to it
         def dynamics_eq(
             t: Tensor, states: tuple[Tensor, Tensor]
         ) -> tuple[Tensor, Tensor]:
@@ -198,3 +198,103 @@ class Integrator:
             sol += sol_est
 
         return sol / est_steps, log_p / est_steps  # type: ignore
+
+    def classify(
+        self,
+        x: Tensor,
+        anc_ts: Tensor,
+        method: str = "midpoint",
+        ode_step_size: Optional[float] = None,
+        est_steps: int = 1,
+        **vf_extras
+    ) -> tuple[Tensor, Tensor]:
+        """Finds the most likely classes for the batch of inputs based on their
+        divergencies at anchor times
+
+        Args:
+            x (Tensor): inputs to classify, size (B, D...)
+            anc_ts (Tensor): anchor times of size (N,) in descending order,
+                where the unknown distributions are in time
+            method (str, optional): which method to use for divergence integration.
+                Defaults to "midpoint".
+            ode_step_size (Optional[float], optional): step size of the integrator for divergence.
+                Defaults to None.
+            est_steps (int, optional): how many times to estimate divergence before averaging it.
+                Defaults to 1
+
+        Returns:
+            tuple[Tensor, Tensor]: divergencies summed for each time query
+                in ascending anchor time, size (B, N) and classes for each of the inputs, size (B,)
+        """
+
+        # Rademacher distribution sampling for Hutchinson's
+        z = (torch.randn_like(x) < 0) * 2.0 - 1.0
+
+        # velocity DE
+        def diff_eq(t: Tensor, x: Tensor) -> Tensor:
+            return self.vector_field(x, t, **vf_extras)
+
+        # dynamics system DE
+        def dynamics_eq(
+            t: Tensor, states: tuple[Tensor, Tensor]
+        ) -> tuple[Tensor, Tensor]:
+            xt, _ = states
+
+            with torch.set_grad_enabled(True):
+                xt.requires_grad_()  # needed xt grads for Hutchinson's
+                ut = diff_eq(t, xt)
+
+                ut_dot_z = torch.einsum(
+                    "nm,nm->n", ut.flatten(start_dim=1), z.flatten(start_dim=1)
+                )
+                grad_ut_dot_z = gradient(ut_dot_z, xt)
+
+                div = torch.einsum(
+                    "nm,nm->n",
+                    grad_ut_dot_z.flatten(start_dim=1),
+                    z.flatten(start_dim=1),
+                )
+
+            return ut.detach(), div.detach()
+
+        # stuff for odeint
+        init_states = (x, torch.zeros(x.shape[0], device=x.device))
+        ode_options = {"step_size": ode_step_size} if ode_step_size else {}
+
+        # matrix of divergencies from which classes will be drawn
+        div_mat = torch.zeros(
+            (x.shape[0], anc_ts.shape[0], anc_ts.shape[0]), device=x.device
+        )
+
+        # make for loop that expands the time interval for the dynamic system eq
+        for t_key in range(2, anc_ts.shape[0] + 1):
+            divs = 0  # type: ignore
+            for _ in range(est_steps):
+                _, est_divs = odeint(  # (anchors, B)
+                    dynamics_eq,
+                    init_states,
+                    anc_ts[:t_key],
+                    method=method,
+                    options=ode_options,
+                )  # type: ignore
+
+                divs += est_divs  # type: ignore
+            divs: Tensor = divs / est_steps
+
+            # (B, anchors)
+            divs: Tensor = torch.transpose(divs, 1, 0)
+
+            # flip the anchors dims, so that it goes in ascending time order
+            divs = divs.flip(1)
+
+            # t_key row gets +divs for all the query times
+            div_mat[:, t_key - 1, :t_key] += divs
+
+            # t_key col gets -divs for all query times (reciprocal of divs)
+            div_mat[:, :t_key, t_key - 1] -= divs
+
+        # can maybe get away with just looking at the lower triangular
+        div_mat = div_mat.sum(dim=-1)
+        preds = torch.argmax(div_mat, -1)
+
+        return div_mat, preds
