@@ -27,7 +27,7 @@ def main():
 
     t_dims = 128
     lr = 1e-3
-    epochs = 1_000
+    epochs = 10_000
 
     # data prep
     ds = get_mnist("train")
@@ -66,7 +66,8 @@ def main():
 
             dxt_hat = vf.forward(path_sample.xt, t)
 
-            loss = (dxt_hat - path_sample.dxt).square().mean()
+            # L1 loss for sharper images
+            loss = (dxt_hat - path_sample.dxt).abs().mean()
 
             loss.backward()
             optim.step()
@@ -99,7 +100,7 @@ def main():
     real_img: Tensor = ds[0][0].to(device).unsqueeze(0)
 
     # calculate mse vs real image, take the indices from torch.min and sample by them
-    errors = (fake_imgs - real_img).square().sum(dim=(1, 2, 3)).div(28 * 28)
+    errors = (fake_imgs - real_img).abs().sum(dim=(1, 2, 3)).div(28 * 28)
     sorted_errors = list(sorted(range(imgs), key=lambda idx: errors[idx]))
     sorted_errors = sorted_errors[:top_k]
 

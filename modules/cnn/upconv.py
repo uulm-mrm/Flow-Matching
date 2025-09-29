@@ -1,10 +1,10 @@
 from torch import Tensor, nn
 from torch.nn import functional as F
 
-from modules.utils import FiLM
+from modules.utils import FiLM, TimeDependentModule
 
 
-class TimeConditionedUpConv(nn.Module):
+class TimeConditionedUpConv(TimeDependentModule):
     """Upconv conditioned on time
 
     Upconv uses pixelshuffle for upsampling, and FiLM for conditioning
@@ -42,4 +42,4 @@ class TimeConditionedUpConv(nn.Module):
         x = self.pixel_shuffle(x)
         x = self.film(x, t)
 
-        return F.selu(x)
+        return F.silu(x)

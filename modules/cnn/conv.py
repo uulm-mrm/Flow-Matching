@@ -1,10 +1,10 @@
 from torch import Tensor, nn
 from torch.nn import functional as F
 
-from modules.utils import FiLM
+from modules.utils import FiLM, TimeDependentModule
 
 
-class TimeConditionedConv(nn.Module):
+class TimeConditionedConv(TimeDependentModule):
     """Ordinary convolution layer conditioned on time using FiLM
 
     Good for giving the convolution time context for each image
@@ -45,4 +45,4 @@ class TimeConditionedConv(nn.Module):
         x = self.conv(x)
         x = self.film(x, t)
 
-        return F.selu(x)
+        return F.silu(x)

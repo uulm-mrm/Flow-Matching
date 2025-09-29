@@ -1,7 +1,28 @@
+import torch
 from torch import Tensor, nn
 
 from modules.cnn import TimeConditionedConv, TimeConditionedUpConv, ConvMHSA
-from modules.utils import SinusoidalTimeEmbedding
+from modules.utils import (
+    SinusoidalTimeEmbedding,
+    TimeDependentSequential,
+    TimeDependentModule,
+)
+
+
+class TimeDependentLinearBlock(TimeDependentModule):
+    def __init__(self, in_dims: int, out_dims: int, t_dims: int) -> None:
+        super().__init__()
+
+        self.nn = nn.Sequential(
+            nn.Linear(in_dims + t_dims, out_dims),
+            nn.BatchNorm1d(out_dims),
+            nn.SiLU(),
+        )
+
+    def forward(self, x: Tensor, t: Tensor) -> Tensor:
+        z = torch.cat([x, t], dim=-1)
+
+        return self.nn(z)
 
 
 class CNNVF(nn.Module):
@@ -12,31 +33,36 @@ class CNNVF(nn.Module):
         self.time_embed = SinusoidalTimeEmbedding(t_dims)
 
         # downsampling
-        self.conv1 = TimeConditionedConv(1, 32, 3, t_dims)  # B, 32, 14, 14
-        self.attn1 = ConvMHSA(in_c=32, heads=4)
-
-        self.conv2 = TimeConditionedConv(32, 64, 3, t_dims)  # B, 64, 7, 7
-        self.attn2 = ConvMHSA(in_c=64, heads=8)
+        self.down = TimeDependentSequential(
+            TimeConditionedConv(1, 32, 3, t_dims, stride=1),  # B, 32, 28, 28
+            nn.AdaptiveMaxPool2d(14),  # B, 32, 14, 14
+            ConvMHSA(in_c=32, heads=4),
+            TimeConditionedConv(32, 64, 3, t_dims, stride=1),  # B, 64, 14, 14
+            nn.AdaptiveAvgPool2d(7),  # B, 64, 7, 7
+            ConvMHSA(in_c=64, heads=8),
+            TimeConditionedConv(64, 128, 3, t_dims, stride=1),  # B, 128, 7, 7
+            nn.AdaptiveAvgPool2d(1),  # B, 128, 1, 1
+        )
 
         # fc bottleneck
-        self.fc = nn.Sequential(
+        self.fc = TimeDependentSequential(
             nn.Flatten(),
-            nn.Linear(64 * 7 * 7, 1024),
-            nn.SiLU(),
-            nn.Linear(1024, 256),
-            nn.SiLU(),
-            nn.Linear(256, 1024),
-            nn.SiLU(),
-            nn.Linear(1024, 64 * 7 * 7),
-            nn.SiLU(),
-            nn.Unflatten(1, (64, 7, 7)),
+            TimeDependentLinearBlock(128, 256, t_dims=1),
+            TimeDependentLinearBlock(256, 128, t_dims=1),
+            nn.Unflatten(1, (128, 1, 1)),
         )
 
         # upsampling
-        self.upconv1 = TimeConditionedUpConv(64, 32, t_dims)  # B, 32, 14, 14
-        self.upattn1 = ConvMHSA(in_c=32, heads=4)
-
-        self.upconv2 = TimeConditionedUpConv(32, 1, t_dims)  # B, 1, 28, 28
+        self.up = TimeDependentSequential(
+            TimeConditionedUpConv(128, 128, t_dims, 7),  # B, 128, 7, 7
+            nn.Conv2d(128, 64, 3, stride=1, padding=1),  # B, 64, 7, 7,
+            ConvMHSA(in_c=64, heads=8),
+            TimeConditionedUpConv(64, 64, t_dims, 2),  # B, 64, 14, 14
+            nn.Conv2d(64, 32, 3, stride=1, padding=1),  # B, 32, 14, 14
+            ConvMHSA(in_c=32, heads=4),
+            TimeConditionedUpConv(32, 32, t_dims, 2),  # B, 32, 28, 28
+            nn.Conv2d(32, 1, 3, stride=1, padding=1),  # B, 1, 28, 28
+        )
 
     def forward(self, x: Tensor, t: Tensor) -> Tensor:
         """
@@ -47,23 +73,16 @@ class CNNVF(nn.Module):
         Returns:
             Tensor: output shape (B, 1, 28, 28)
         """
-
+        t = t.view(-1, 1).expand(x.shape[0], 1)
         t_emb = self.time_embed.forward(t)
 
         # downsample
-        x = self.conv1.forward(x, t_emb)
-        x = self.attn1.forward(x)
-
-        x = self.conv2.forward(x, t_emb)
-        x = self.attn2.forward(x)
+        x = self.down(x, t_emb)
 
         # fc bottleneck
-        x = self.fc(x)
+        x = self.fc(x, t)
 
         # upsample
-        x = self.upconv1.forward(x, t_emb)
-        x = self.upattn1.forward(x)
-
-        x = self.upconv2.forward(x, t_emb)
+        x = self.up(x, t_emb)
 
         return x
