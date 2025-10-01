@@ -159,7 +159,7 @@ class ConvMHSA(nn.Module):
             Tensor: tensor of size (B, C, H, W) after self attention
         """
         b, c, h, w = x.size()
-        x = x.reshape(b, c, -1)
+        x = x.reshape(b, c, h * w)
 
         # project qkv
         q, k, v = self.qkv(x).chunk(3, dim=1)
@@ -168,8 +168,8 @@ class ConvMHSA(nn.Module):
         # (batch * heads, spatial, spatial)
         attn_w = torch.einsum(
             "bcn,bcm->bnm",  # a lil bit quicker to mul separately than div later
-            q.view(b * self.heads, self.head_dims, h * w),
-            k.view(b * self.heads, self.head_dims, h * w),
+            q.reshape(b * self.heads, self.head_dims, h * w),
+            k.reshape(b * self.heads, self.head_dims, h * w),
         )
         attn_w = attn_w * self.attn_scale
         attn_w = F.softmax(attn_w, dim=-1)

@@ -27,7 +27,7 @@ def main():
 
     t_dims = 128
     lr = 1e-3
-    epochs = 10_000
+    epochs = 1_000
 
     # data prep
     ds = get_mnist("train")
