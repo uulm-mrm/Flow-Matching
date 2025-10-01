@@ -168,9 +168,10 @@ class ConvMHSA(nn.Module):
         # (batch * heads, spatial, spatial)
         attn_w = torch.einsum(
             "bcn,bcm->bnm",  # a lil bit quicker to mul separately than div later
-            (q * self.attn_scale).view(b * self.heads, self.head_dims, h * w),
-            (k * self.attn_scale).view(b * self.heads, self.head_dims, h * w),
+            q.view(b * self.heads, self.head_dims, h * w),
+            k.view(b * self.heads, self.head_dims, h * w),
         )
+        attn_w = attn_w * self.attn_scale
         attn_w = F.softmax(attn_w, dim=-1)
 
         # (batch * heads, spatial, spatial) @ (batch * heads, head_d, spatial) =
