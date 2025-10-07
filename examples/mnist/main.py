@@ -26,17 +26,18 @@ def main():
     batch_size = 512
 
     t_dims = 128
+    l2_weight = 0.8
     lr = 1e-3
     epochs = 1_000
 
     # data prep
     ds = get_mnist("train")
     ds = sample_mnist(ds, classes)
-    dl = DataLoader(ds, batch_size=batch_size, shuffle=False, drop_last=False)
+    dl = DataLoader(ds, batch_size=batch_size, shuffle=True, drop_last=False)
 
     # dims = C * H * W
     # you may need to wait for this thing to optimize itself nicely in higher dims
-    x0_sampler = GaussianMixture(n=8, dims=1 * 28 * 28, sigma=0.5, r=1.5, device=device)
+    x0_sampler = GaussianMixture(n=8, dims=1 * 28 * 28, sigma=0.5, r=1.0, device=device)
 
     # model prep
     vf = CNNVF(t_dims=t_dims).to(device)
@@ -55,7 +56,6 @@ def main():
             x1 = x1.to(device)
 
             # sample x0
-            # x0 = torch.randn_like(x1)
             x0 = x0_sampler.sample(x1.size(0)).reshape(-1, 1, 28, 28)
 
             # sample time
@@ -66,8 +66,12 @@ def main():
 
             dxt_hat = vf.forward(path_sample.xt, t)
 
-            # L1 loss for sharper images
-            loss = (dxt_hat - path_sample.dxt).abs().mean()
+            # loss is a weighted mix of L1 and L2
+            ut_diff = dxt_hat - path_sample.dxt
+            l2_loss = ut_diff.square().mean()
+            l1_loss = ut_diff.abs().mean()
+
+            loss = l2_weight * l2_loss + (1 - l2_weight) * l1_loss
 
             loss.backward()
             optim.step()
@@ -84,11 +88,11 @@ def main():
     vf = vf.eval()
 
     # generate a few samples
-    step_size = 0
+    step_size = 0.05
     imgs = 1024
     top_k = 16
 
-    x0 = torch.randn((imgs, 1, 28, 28), device=device)
+    x0 = x0_sampler.sample(imgs).reshape(imgs, 1, 28, 28).to(device)
     # we're interested in the end product not the path so no anchors
     t = torch.tensor([0.0, 1.0], device=device, dtype=torch.float32)
 
@@ -99,8 +103,8 @@ def main():
     # find 16 images with the lowest losses compared to the first digit
     real_img: Tensor = ds[0][0].to(device).unsqueeze(0)
 
-    # calculate mse vs real image, take the indices from torch.min and sample by them
-    errors = (fake_imgs - real_img).abs().sum(dim=(1, 2, 3)).div(28 * 28)
+    # calculate mae vs real image, take the indices from torch.min and sample by them
+    errors = (fake_imgs - real_img).square().sum(dim=(1, 2, 3)).div(28 * 28)
     sorted_errors = list(sorted(range(imgs), key=lambda idx: errors[idx]))
     sorted_errors = sorted_errors[:top_k]
 

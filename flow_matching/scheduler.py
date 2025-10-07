@@ -46,4 +46,4 @@ class PolyScheduler(Scheduler):
         return self.n * torch.pow(t, self.n - 1)
 
     def d_sigma(self, t: Tensor) -> Tensor:
-        return -self.n * (1 - torch.pow(t, self.n - 1))
+        return -self.n * torch.pow(t, self.n - 1)
