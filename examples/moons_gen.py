@@ -13,7 +13,7 @@ from sklearn.datasets import make_moons
 
 from flow_matching.scheduler import OTScheduler
 from flow_matching import Path
-from flow_matching import Integrator
+from flow_matching import ODEProcess
 
 DEVICE = "cuda:0"
 
@@ -102,7 +102,7 @@ def main():
     t = torch.linspace(0, 1, 11).to(DEVICE)
 
     vf = vf.eval()
-    integrator = Integrator(vf)
+    integrator = ODEProcess(vf)
     sols = integrator.sample(x0, t, method="midpoint", step_size=0.05)
 
     # plot path

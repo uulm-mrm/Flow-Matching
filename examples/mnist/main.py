@@ -6,7 +6,7 @@ import torch
 from torch import Tensor
 from torch.utils.data import DataLoader
 
-from flow_matching import Path, Integrator
+from flow_matching import Path, ODEProcess
 from flow_matching.scheduler import OTScheduler
 from flow_matching.distributions import GaussianMixture
 
@@ -96,7 +96,7 @@ def main():
     # we're interested in the end product not the path so no anchors
     t = torch.tensor([0.0, 1.0], device=device, dtype=torch.float32)
 
-    integrator = Integrator(vf)
+    integrator = ODEProcess(vf)
     sols = integrator.sample(x0, t, method="midpoint", step_size=step_size)
     fake_imgs = sols[-1]  # take the samples at t=1
 

@@ -9,10 +9,8 @@ from tqdm import tqdm
 import torch
 from torch import Tensor, nn
 
-from sklearn.datasets import make_moons
-
 from flow_matching.scheduler import OTScheduler
-from flow_matching import Path, Integrator
+from flow_matching import Path, ODEProcess
 
 
 class VectorField(nn.Module):
@@ -42,13 +40,11 @@ class VectorField(nn.Module):
         return self.mlp(z)
 
 
-def x1_sampler(samples: int) -> tuple[Tensor, Tensor]:
-    x, y = make_moons(samples, noise=0.05)
+def xt_sampler(samples: int, bounds: tuple[float, float]) -> Tensor:
+    """Samples a uniform distribution at given bounds"""
+    x = torch.rand((samples, 2)) * (bounds[1] - bounds[0]) + bounds[0]
 
-    x = torch.from_numpy(x).float()
-    y = torch.from_numpy(y).float()
-
-    return x, y
+    return x
 
 
 def push_forward(
@@ -83,6 +79,8 @@ def main():
     device = "cuda:0"
 
     batch_size = 4096
+    x0_bounds = (0, 1)
+    x1_bounds = (2, 3)
 
     in_dims = 2
     h_dims = 512
@@ -96,14 +94,13 @@ def main():
         optim.zero_grad()
 
         # sample shit here
-        x_hat, y = x1_sampler(batch_size)
-        x1 = x_hat[y == 0].to(device)
-        x2 = x_hat[y == 1].to(device)
+        x0 = xt_sampler(batch_size, x0_bounds).to(device)
+        x1 = xt_sampler(batch_size, x1_bounds).to(device)
 
-        x0 = torch.randn_like(x1)
+        x_init = torch.randn_like(x1)
 
-        loss1 = push_forward(x0, x1, (0.0, 0.5), p, vf.forward)
-        loss2 = push_forward(x1, x2, (0.5, 1.0), p, vf.forward)
+        loss1 = push_forward(x_init, x0, (0.0, 0.5), p, vf.forward)
+        loss2 = push_forward(x0, x1, (0.5, 1.0), p, vf.forward)
 
         loss = loss1 + loss2
 
@@ -113,12 +110,12 @@ def main():
         pbar.set_description(f"Loss: {loss.item():.3f}")
 
     # integrate over time
-    x0 = torch.randn((10_000, in_dims)).to(device)
+    x_init = torch.randn((10_000, in_dims)).to(device)
     t = torch.linspace(0, 1, 11).to(device)
 
     vf = vf.eval()
-    integrator = Integrator(vf)
-    sols = integrator.sample(x0, t, method="midpoint", step_size=0.05)
+    integrator = ODEProcess(vf)
+    sols = integrator.sample(x_init, t, method="midpoint", step_size=0.05)
 
     # plot path
     sols = sols.detach().cpu().numpy()
@@ -135,7 +132,7 @@ def main():
         cmin = 0.0
         cmax = torch.quantile(torch.from_numpy(H[0]), 0.99).item()
 
-        norm = cm.colors.Normalize(vmax=cmax, vmin=cmin)
+        norm = cm.colors.Normalize(vmax=cmax, vmin=cmin)  # type: ignore
 
         _ = axs[i].hist2d(
             sol[:, 0], sol[:, 1], 300, range=((-3, 3), (-3, 3)), norm=norm
@@ -151,17 +148,6 @@ def main():
 
     plt.tight_layout()
     plt.show()
-
-    # estimate ll for classification
-    x, y = x1_sampler(1000)
-    _, preds = integrator.classify(
-        x.to(device),
-        torch.tensor([1.0, 0.5], dtype=torch.float32, device=device),
-        ode_step_size=0.05,
-        est_steps=10,
-    )
-
-    print(sum(preds.detach().cpu() == y))
 
 
 if __name__ == "__main__":
