@@ -8,11 +8,11 @@ class Integrator:
 
     def _step(
         self,
-        func: Callable[[Tensor, Tensor], Tensor],
+        func: Callable[[Tensor, list[Tensor]], list[Tensor]],
         tn: Tensor,
-        xn: Tensor,
+        xn: list[Tensor],
         dt: Tensor,
-    ) -> tuple[Tensor, Tensor]:
+    ) -> tuple[Tensor, list[Tensor]]:
         """Does one step of the numerical ODE solver
 
         Args:
@@ -28,11 +28,11 @@ class Integrator:
 
     def integrate(
         self,
-        func: Callable[[Tensor, Tensor], Tensor],
-        x0: Tensor,
+        func: Callable[[Tensor, list[Tensor]], list[Tensor]],
+        x0: list[Tensor],
         ints: Tensor,
         steps: int = 20,
-    ) -> tuple[Tensor, Tensor]:
+    ) -> tuple[Tensor, list[Tensor]]:
         """Integrates the function `func` over a batch of time intervals `ints`,
         starting from some initial condition `x0`, iterating `steps` number of times
 
@@ -49,23 +49,33 @@ class Integrator:
         t0, t1 = ints[:, 0].unsqueeze(1), ints[:, 1].unsqueeze(1)
         dt = (t1 - t0) / steps
 
-        x = torch.empty(size=(steps + 1, *x0.shape), dtype=x0.dtype, device=x0.device)
-        t = torch.empty(
+        x_traj = [
+            torch.empty(
+                size=(steps + 1, *_x0.shape), dtype=_x0.dtype, device=_x0.device
+            )
+            for _x0 in x0
+        ]
+
+        t_traj = torch.empty(
             size=(steps + 1, *t0.shape), dtype=ints.dtype, device=ints.device
         )
 
-        x[0] = x0
-        t[0] = t0
+        # initial state
+        for i, _x0 in enumerate(x0):
+            x_traj[i][0] = _x0
+
+        t_traj[0] = t0
 
         xn = x0
         tn = t0
         for e in range(steps):
             tn, xn = self._step(func, tn, xn, dt)
 
-            x[e + 1] = xn
-            t[e + 1] = tn
+            for i, _xn in enumerate(xn):
+                x_traj[i][e + 1] = _xn
+            t_traj[e + 1] = tn
 
-        return t, x
+        return t_traj, x_traj
 
 
 class EulerIntegrator(Integrator):
@@ -78,12 +88,16 @@ class EulerIntegrator(Integrator):
 
     def _step(
         self,
-        func: Callable[[Tensor, Tensor], Tensor],
+        func: Callable[[Tensor, list[Tensor]], list[Tensor]],
         tn: Tensor,
-        xn: Tensor,
+        xn: list[Tensor],
         dt: Tensor,
-    ) -> tuple[Tensor, Tensor]:
-        xn = xn + dt * func(tn, xn)
+    ) -> tuple[Tensor, list[Tensor]]:
+        states = func(tn, xn)
+
+        for i, state in enumerate(states):
+            xn[i] = xn[i] + dt * state
+
         tn = tn + dt
 
         return tn, xn
@@ -99,15 +113,21 @@ class MidpointIntegrator(Integrator):
 
     def _step(
         self,
-        func: Callable[[Tensor, Tensor], Tensor],
+        func: Callable[[Tensor, list[Tensor]], list[Tensor]],
         tn: Tensor,
-        xn: Tensor,
+        xn: list[Tensor],
         dt: Tensor,
-    ) -> tuple[Tensor, Tensor]:
+    ) -> tuple[Tensor, list[Tensor]]:
         half_dt = dt / 2
-        mid_x = xn + half_dt * func(tn, xn)
 
-        xn = xn + dt * func(tn + half_dt, mid_x)
+        mid_states = func(tn, xn)
+        for i, state in enumerate(mid_states):
+            mid_states[i] = xn[i] + half_dt * state
+
+        states = func(tn + half_dt, mid_states)
+        for i, state in enumerate(states):
+            xn[i] = xn[i] + dt * state
+
         tn = tn + dt
 
         return tn, xn
@@ -115,19 +135,22 @@ class MidpointIntegrator(Integrator):
 
 def main():
     # always define dy/dt as f(t, y)
-    f = lambda t, x: 2 * t
+    f = lambda t, x: [t, 2 * t]
 
-    x0 = torch.zeros((10, 2))
-    tint = torch.tensor([[0.0, 1.0]], dtype=x0.dtype, device=x0.device)
-    tint = tint.expand(*x0.shape)
+    batch_size = 10
+    x0 = [torch.zeros((batch_size, 2)), torch.zeros((batch_size, 2))]
+    tint = torch.tensor([[0.0, 1.0]])
+    tint = tint.expand(batch_size, 2)
 
-    ei = EulerIntegrator()
-    t, x = ei.integrate(f, x0, tint, steps=4)
-    print(t[-1], x[-1])
+    # ei = EulerIntegrator()
+    # t, x = ei.integrate(f, x0, tint, steps=4)
+    # x1, x2 = x
+    # print(t[-1], x1[-1], x2[-1])
 
     mi = MidpointIntegrator()
-    t, x = mi.integrate(f, x0, tint, steps=4)
-    print(t[-1], x[-1])
+    t, x = mi.integrate(f, x0, tint, steps=10)
+    x1, x2 = x
+    print(t[-1], x1[-1], x2[-1])
 
 
 if __name__ == "__main__":

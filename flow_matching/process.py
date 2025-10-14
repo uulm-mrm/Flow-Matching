@@ -40,7 +40,7 @@ class ODEProcess:
 
     def sample(
         self, x_init: Tensor, ints: Tensor, steps: int, **vf_extras
-    ) -> tuple[Tensor, Tensor]:
+    ) -> tuple[Tensor, list[Tensor]]:
         """Integrates the vector field along the probability path within the time provided
         Sampling can run in reverse if time is in descending order, but x_init must also match
 
@@ -55,12 +55,13 @@ class ODEProcess:
         """
 
         # function to integrate over time
-        def diff_eq(t: Tensor, x: Tensor) -> Tensor:
-            return self.vector_field(x, t, **vf_extras)
+        def diff_eq(t: Tensor, x: list[Tensor]) -> list[Tensor]:
+            _x = x[0]
+            return [self.vector_field(_x, t, **vf_extras)]
 
         with torch.no_grad():
             t_traj, x_traj = self.integrator.integrate(
-                diff_eq, x_init, ints, steps=steps
+                diff_eq, [x_init], ints, steps=steps
             )
 
         return t_traj, x_traj

@@ -50,12 +50,6 @@ class VectorField(nn.Module):
         Returns:
             Tensor: speed for each component of the input x
         """
-
-        # the sampler iterates through time in tensors shaped ([])
-        # so this broadcasts it to (B,1)
-        # but if time is already in (B,) like for training then this just makes it a vector
-        t = t.view(-1, self.t_dims).expand(xt.shape[0], self.t_dims)
-
         z = torch.cat([xt, t], dim=-1)
 
         return self.mlp(z)
@@ -109,7 +103,7 @@ def main():
     _, x_traj = integrator.sample(x0, intervals, steps=steps)
 
     # plot path
-    sols = x_traj.detach().cpu().numpy()
+    sols = x_traj[0].detach().cpu().numpy()
 
     ax_cols = math.ceil(sols.shape[0] ** 0.5)
     ax_rows = math.ceil(sols.shape[0] / ax_cols)
@@ -140,28 +134,28 @@ def main():
     plt.tight_layout()
     plt.show()
 
-    # visualize likelihood
-    t = torch.tensor([1.0, 0.0], device=DEVICE)
+    # # visualize likelihood
+    # t = torch.tensor([1.0, 0.0], device=DEVICE)
 
-    grid_size = 200
-    grid_axis = torch.linspace(-3.0, 3.0, grid_size)
+    # grid_size = 200
+    # grid_axis = torch.linspace(-3.0, 3.0, grid_size)
 
-    x1 = torch.meshgrid(grid_axis, grid_axis, indexing="ij")
-    x1 = torch.stack([x1[0].flatten(), x1[1].flatten()], dim=1).to(DEVICE)
+    # x1 = torch.meshgrid(grid_axis, grid_axis, indexing="ij")
+    # x1 = torch.stack([x1[0].flatten(), x1[1].flatten()], dim=1).to(DEVICE)
 
-    log_p0 = Independent(
-        Normal(torch.zeros(2, device=DEVICE), torch.ones(2, device=DEVICE)), 1
-    ).log_prob
+    # log_p0 = Independent(
+    #     Normal(torch.zeros(2, device=DEVICE), torch.ones(2, device=DEVICE)), 1
+    # ).log_prob
 
-    _, log_p1 = integrator.compute_likelihood(x1, t, log_p0, ode_step_size=0.05)
+    # _, log_p1 = integrator.compute_likelihood(x1, t, log_p0, ode_step_size=0.05)
 
-    log_p1 = torch.exp(log_p1).reshape(grid_size, grid_size)
-    log_p1 = log_p1.detach().cpu().numpy()
-    norm = cm.colors.Normalize(vmax=1.0, vmin=0.0)  # type: ignore
-    plt.imshow(
-        log_p1, extent=(-3.0, 3.0, -3.0, 3.0), cmap="viridis", norm=norm, origin="lower"
-    )
-    plt.show()
+    # log_p1 = torch.exp(log_p1).reshape(grid_size, grid_size)
+    # log_p1 = log_p1.detach().cpu().numpy()
+    # norm = cm.colors.Normalize(vmax=1.0, vmin=0.0)  # type: ignore
+    # plt.imshow(
+    #     log_p1, extent=(-3.0, 3.0, -3.0, 3.0), cmap="viridis", norm=norm, origin="lower"
+    # )
+    # plt.show()
 
 
 if __name__ == "__main__":
