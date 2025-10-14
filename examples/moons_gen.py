@@ -14,6 +14,7 @@ from sklearn.datasets import make_moons
 from flow_matching.scheduler import OTScheduler
 from flow_matching import Path
 from flow_matching import ODEProcess
+from flow_matching import MidpointIntegrator
 
 DEVICE = "cuda:0"
 
@@ -73,7 +74,7 @@ def main():
 
     in_dims = 2
     h_dims = 512
-    epochs = 10_000
+    epochs = 1_000
 
     vf = VectorField(in_dims=in_dims, h_dims=h_dims, t_dims=1).to(DEVICE)
     p = Path(OTScheduler())
@@ -99,17 +100,19 @@ def main():
 
     # integrate over time
     x0 = torch.randn((10_000, in_dims)).to(DEVICE)
-    t = torch.linspace(0, 1, 11).to(DEVICE)
+    intervals = torch.tensor([[0.0, 1.0]], dtype=x0.dtype, device=x0.device)
+    intervals = intervals.expand(x0.shape[0], 2)
+    steps = 10
 
     vf = vf.eval()
-    integrator = ODEProcess(vf)
-    sols = integrator.sample(x0, t, method="midpoint", step_size=0.05)
+    integrator = ODEProcess(vf, MidpointIntegrator())
+    _, x_traj = integrator.sample(x0, intervals, steps=steps)
 
     # plot path
-    sols = sols.detach().cpu().numpy()
+    sols = x_traj.detach().cpu().numpy()
 
-    ax_cols = math.ceil(len(t) ** 0.5)
-    ax_rows = math.ceil(len(t) / ax_cols)
+    ax_cols = math.ceil(sols.shape[0] ** 0.5)
+    ax_rows = math.ceil(sols.shape[0] / ax_cols)
     fig, axs = plt.subplots(ax_rows, ax_cols, figsize=(ax_cols * 4, ax_rows * 4))
 
     # yes you can flatten axes they are a np.array
@@ -120,18 +123,18 @@ def main():
         cmin = 0.0
         cmax = torch.quantile(torch.from_numpy(H[0]), 0.99).item()
 
-        norm = cm.colors.Normalize(vmax=cmax, vmin=cmin)
+        norm = cm.colors.Normalize(vmax=cmax, vmin=cmin)  # type: ignore
 
         _ = axs[i].hist2d(
             sol[:, 0], sol[:, 1], 300, range=((-3, 3), (-3, 3)), norm=norm
         )
 
-        axs[i].set_title(f"t = {t[i]:.2f}")
+        axs[i].set_title(f"step = {i}")
         axs[i].set_xlim([-3, 3])
         axs[i].set_ylim([-3, 3])
         axs[i].set_aspect("equal")
 
-    for i in range(len(t), len(axs)):
+    for i in range(sols.shape[0], len(axs)):
         fig.delaxes(axs[i])
 
     plt.tight_layout()
@@ -154,7 +157,7 @@ def main():
 
     log_p1 = torch.exp(log_p1).reshape(grid_size, grid_size)
     log_p1 = log_p1.detach().cpu().numpy()
-    norm = cm.colors.Normalize(vmax=1.0, vmin=0.0)
+    norm = cm.colors.Normalize(vmax=1.0, vmin=0.0)  # type: ignore
     plt.imshow(
         log_p1, extent=(-3.0, 3.0, -3.0, 3.0), cmap="viridis", norm=norm, origin="lower"
     )

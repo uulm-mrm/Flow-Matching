@@ -4,6 +4,8 @@ from torchdiffeq import odeint
 import torch
 from torch import Tensor, nn
 
+from flow_matching import Integrator
+
 
 def gradient(y: Tensor, x: Tensor) -> Tensor:
     """Calculate the gradient of y with respec to x
@@ -32,45 +34,36 @@ class ODEProcess:
     or compute the likelihood along the path
     """
 
-    def __init__(self, vector_field: nn.Module) -> None:
+    def __init__(self, vector_field: nn.Module, integrator: Integrator) -> None:
         self.vector_field = vector_field
+        self.integrator = integrator
 
     def sample(
-        self,
-        x_init: Tensor,
-        t: Tensor,
-        method: str = "midpoint",
-        step_size: Optional[float] = None,
-        **vf_extras
-    ) -> Tensor:
+        self, x_init: Tensor, ints: Tensor, steps: int, **vf_extras
+    ) -> tuple[Tensor, Tensor]:
         """Integrates the vector field along the probability path within the time provided
         Sampling can run in reverse if time is in descending order, but x_init must also match
 
         Args:
-            x_init (Tensor): x(t[0]) the initial condition of the ODE
-            t (Tensor): time points in which to integrate, size (N)
-            method (str, optional): method which to use for integration.
-                Check torchdiffeq odeint for all possibilities.
-                Defaults to "midpoint".
-            step_size (Optional[float], optional): if the method allows for a step size,
-                the step size to use. Check torchdiffeq odein if possible valid
-                Defaults to None.
+            x_init (Tensor): x(t[0]) the initial condition of the ODE, size (B, D...)
+            ints (Tensor): start and end point of the interval in which to integrate, size (B, 2)
+            steps (int): number of steps in numerical solution
             **vf_extras: additional parameters for the model if needed
 
         Returns:
-            Tensor: an (N, B, D) tensor of N solutions anchored to specific times in t
+            Tensor: (steps+1, B, 1) and (steps+1, B, D...) of time and solution trajectories
         """
 
         # function to integrate over time
         def diff_eq(t: Tensor, x: Tensor) -> Tensor:
             return self.vector_field(x, t, **vf_extras)
 
-        ode_options = {"step_size": step_size} if step_size else {}
-
         with torch.no_grad():
-            sols = odeint(diff_eq, x_init, t, method=method, options=ode_options)
+            t_traj, x_traj = self.integrator.integrate(
+                diff_eq, x_init, ints, steps=steps
+            )
 
-        return sols  # type: ignore
+        return t_traj, x_traj
 
     def compute_likelihood_once(
         self,
