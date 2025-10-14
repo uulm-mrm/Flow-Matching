@@ -1,5 +1,4 @@
-from typing import Callable, Optional
-from torchdiffeq import odeint
+from typing import Callable
 
 import torch
 from torch import Tensor, nn
@@ -69,10 +68,9 @@ class ODEProcess:
     def compute_likelihood_once(
         self,
         x1: Tensor,
-        t: Tensor,
+        ints: Tensor,
         log_p0: Callable[[Tensor], Tensor],
-        method: str = "midpoint",
-        step_size: Optional[float] = None,
+        steps: int,
         **vf_extras
     ) -> tuple[Tensor, Tensor]:
         """Calculates the unbiased estimation of log p1 using Hutchinson's estimator
@@ -106,9 +104,7 @@ class ODEProcess:
         # two to find are the positions at t and the divergence at t
         # the positions will then be used to calculate log p0
         # and the divergence will be added to it
-        def dynamics_eq(
-            t: Tensor, states: tuple[Tensor, Tensor]
-        ) -> tuple[Tensor, Tensor]:
+        def dynamics_eq(t: Tensor, states: list[Tensor]) -> list[Tensor]:
             # don't need div at t, since we won't be using it, just the xt
             xt, _ = states
 
@@ -132,30 +128,27 @@ class ODEProcess:
                     z.flatten(start_dim=1),
                 )
 
-            return ut.detach(), div.detach()
+            return [ut.detach(), div.unsqueeze(1).detach()]
 
-        # the initial states of the dynamics eq are:
-        # x at t=1 for position and the 0 vector for divergence
-        init_states = (x1, torch.zeros(x1.shape[0], device=x1.device))
-        ode_options = {"step_size": step_size} if step_size else {}
+        init_states = [x1, torch.zeros((x1.shape[0], 1), device=x1.device)]
 
         with torch.no_grad():
-            sol, div = odeint(
-                dynamics_eq, init_states, t, method=method, options=ode_options
+            _, (sol, div) = self.integrator.integrate(
+                dynamics_eq, init_states, ints, steps=steps
             )
 
         x0 = sol[-1]
         log_p_x0 = log_p0(x0)
+        div_x0 = div[-1].squeeze(1)
 
-        return x0, log_p_x0 + div[-1]
+        return x0, log_p_x0 + div_x0
 
     def compute_likelihood(
         self,
         x1: Tensor,
-        t: Tensor,
+        ints: Tensor,
         log_p0: Callable[[Tensor], Tensor],
-        method: str = "midpoint",
-        ode_step_size: Optional[float] = None,
+        steps: int,
         est_steps: int = 10,
         **vf_extras
     ) -> tuple[Tensor, Tensor]:
@@ -185,7 +178,7 @@ class ODEProcess:
 
         for _ in range(est_steps):
             sol_est, log_p_est = self.compute_likelihood_once(
-                x1, t, log_p0, method, ode_step_size, **vf_extras
+                x1, ints, log_p0, steps, **vf_extras
             )
 
             log_p += log_p_est

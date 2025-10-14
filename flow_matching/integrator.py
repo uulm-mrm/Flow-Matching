@@ -138,7 +138,7 @@ def main():
     f = lambda t, x: [t, 2 * t]
 
     batch_size = 10
-    x0 = [torch.zeros((batch_size, 2)), torch.zeros((batch_size, 2))]
+    x0 = [torch.zeros((batch_size, 2)), torch.zeros((batch_size, 1))]
     tint = torch.tensor([[0.0, 1.0]])
     tint = tint.expand(batch_size, 2)
 
