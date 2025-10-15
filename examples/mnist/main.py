@@ -6,7 +6,7 @@ import torch
 from torch import Tensor
 from torch.utils.data import DataLoader
 
-from flow_matching import Path, ODEProcess
+from flow_matching import Path, ODEProcess, MidpointIntegrator
 from flow_matching.scheduler import OTScheduler
 from flow_matching.distributions import GaussianMixture
 
@@ -88,17 +88,17 @@ def main():
     vf = vf.eval()
 
     # generate a few samples
-    step_size = 0.05
     imgs = 1024
     top_k = 16
 
     x0 = x0_sampler.sample(imgs).reshape(imgs, 1, 28, 28).to(device)
-    # we're interested in the end product not the path so no anchors
-    t = torch.tensor([0.0, 1.0], device=device, dtype=torch.float32)
+    intervals = torch.tensor([[0.0, 1.0]], dtype=x0.dtype, device=x0.device)
+    intervals = intervals.expand(x0.shape[0], 2)
+    steps = 10
 
-    integrator = ODEProcess(vf)
-    sols = integrator.sample(x0, t, method="midpoint", step_size=step_size)
-    fake_imgs = sols[-1]  # take the samples at t=1
+    integrator = ODEProcess(vf, MidpointIntegrator())
+    _, x_traj = integrator.sample(x0, intervals, steps=steps)
+    fake_imgs = x_traj[-1]  # take the samples at t=1
 
     # find 16 images with the lowest losses compared to the first digit
     real_img: Tensor = ds[0][0].to(device).unsqueeze(0)

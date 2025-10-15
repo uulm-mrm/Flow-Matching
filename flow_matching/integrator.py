@@ -97,7 +97,8 @@ class EulerIntegrator(Integrator):
         states = func(tn, xn)
 
         for i, state in enumerate(states):
-            xn[i] = xn[i] + dt * state
+            _dt = dt.view(-1, *[1] * len(state.shape[1:]))
+            xn[i] = xn[i] + _dt * state
 
         tn = tn + dt
 
@@ -123,11 +124,13 @@ class MidpointIntegrator(Integrator):
 
         mid_states = func(tn, xn)
         for i, state in enumerate(mid_states):
-            mid_states[i] = xn[i] + half_dt * state
+            _half_dt = half_dt.view(-1, *[1] * len(state.shape[1:]))
+            mid_states[i] = xn[i] + _half_dt * state
 
         states = func(tn + half_dt, mid_states)
         for i, state in enumerate(states):
-            xn[i] = xn[i] + dt * state
+            _dt = dt.view(-1, *[1] * len(state.shape[1:]))
+            xn[i] = xn[i] + _dt * state
 
         tn = tn + dt
 
