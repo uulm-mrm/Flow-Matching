@@ -1,6 +1,7 @@
+from typing import Callable
+
 import torch
 from torch import Tensor
-from typing import Callable
 
 
 class Seeker:
@@ -9,7 +10,7 @@ class Seeker:
 
     def search(
         self,
-        sfunc: Callable[[Tensor], Tensor],
+        score_func: Callable[[Tensor], Tensor],
         a: Tensor,
         b: Tensor,
         eps: float = 1e-6,
@@ -24,7 +25,7 @@ class GoldenSectionSeeker(Seeker):
 
     def search(
         self,
-        sfunc: Callable[[Tensor], Tensor],
+        score_func: Callable[[Tensor], Tensor],
         a: Tensor,
         b: Tensor,
         eps: float = 1e-6,
@@ -33,7 +34,7 @@ class GoldenSectionSeeker(Seeker):
         on the given function func
 
         Args:
-            sfunc (Callable[[Tensor], Tensor]): 1D score function that takes a scalar
+            score_func (Callable[[Tensor], Tensor]): 1D score function that takes a scalar
                 and returns a score
             batch_size (int): number of elements in the batch
             a (Tensor): lower bound of the interval.
@@ -44,13 +45,16 @@ class GoldenSectionSeeker(Seeker):
             tuple[Tensor, Tensor]: the point which produces the minimum and its function value
         """
 
+        # work on the (a, b] interval because of the classifier later
+        original_b, fb = b.clone(), score_func(b)
+
         # first eval points
         c = b - self.fi * (b - a)
         d = a + self.fi * (b - a)
 
         # first two evals
-        fc = sfunc(c)
-        fd = sfunc(d)
+        fc = score_func(c)
+        fd = score_func(d)
 
         evals = 2
         while ((b - a) > eps).any() and evals < self.max_evals:
@@ -64,8 +68,8 @@ class GoldenSectionSeeker(Seeker):
             d = a + self.fi * (b - a)
             c = b - self.fi * (b - a)
 
-            fc = sfunc(c)
-            fd = sfunc(d)
+            fc = score_func(c)
+            fd = score_func(d)
 
             evals += 1
 
@@ -74,17 +78,19 @@ class GoldenSectionSeeker(Seeker):
         min_x = torch.where(mask, c, d)
         min_fx = torch.where(mask, fc, fd)
 
+        mask = min_fx < fb
+        min_x = torch.where(mask, min_x, original_b)
+        min_fx = torch.where(mask, min_fx, fb)
+
         return min_x, min_fx
 
 
 def main():
-    optim = lambda x: (x - 2) ** 2
-
     gss = GoldenSectionSeeker(max_evals=20)
-    a = torch.tensor([-2.2, 2.0, 1.5, 0.5])
-    b = torch.tensor([2.2, 3.0, 2.2, 4.0])
+    a = torch.tensor([0.0, -1.0, -1.5, 0.5])
+    b = torch.tensor([1.0, 1.0, 2.2, 4.0])
 
-    min_x, min_fx = gss.search(optim, a, b, eps=1e-8)
+    min_x, min_fx = gss.search(lambda x: -torch.exp(x), a, b, eps=1e-3)
     print(min_x, min_fx)
 
 

@@ -3,7 +3,8 @@ from typing import Callable
 import torch
 from torch import Tensor, nn
 
-from flow_matching import Integrator
+from flow_matching.integrator import Integrator
+from flow_matching.seeker import Seeker
 
 
 def gradient(y: Tensor, x: Tensor) -> Tensor:
@@ -176,3 +177,38 @@ class ODEProcess:
             sol += sol_est
 
         return sol / est_steps, log_p / est_steps  # type: ignore
+
+    def classify(
+        self,
+        seeker: Seeker,
+        x: Tensor,
+        log_p0: Callable[[Tensor], Tensor],
+        steps: int = 10,
+        est_steps: int = 1,
+        eps: float = 1e-3,
+        **vf_extras
+    ):
+        """you get a set of X, and for all of them the a, b is 0 to 1
+        you need to redefine self.compute_likelihood so that it only takes the time,
+        such that the lower bound of the ints is for all 0
+        and only the upper bound is moving
+        """
+
+        def score_func(upper_t: Tensor) -> Tensor:
+            ints = torch.zeros((upper_t.shape[0], 2), dtype=x.dtype, device=x.device)
+            ints[:, 0] = upper_t
+
+            _, log_p = self.compute_likelihood(
+                x, ints, log_p0, steps=steps, est_steps=est_steps, **vf_extras
+            )
+
+            # looking for max log_p is the same as minimizing -log_p
+            return -log_p
+
+        a = torch.zeros(x.shape[0], dtype=x.dtype, device=x.device)
+        b = torch.ones(x.shape[0], dtype=x.dtype, device=x.device)
+
+        min_t, min_p = seeker.search(score_func, a, b, eps=eps)
+
+        # -min_p because the function is inverted to find the minimum
+        return min_t, -min_p

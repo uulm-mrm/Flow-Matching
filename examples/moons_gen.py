@@ -103,7 +103,7 @@ def main():
     _, x_traj = integrator.sample(x0, intervals, steps=steps)
 
     # plot path
-    sols = x_traj[0].detach().cpu().numpy()
+    sols = x_traj.detach().cpu().numpy()
 
     ax_cols = math.ceil(sols.shape[0] ** 0.5)
     ax_rows = math.ceil(sols.shape[0] / ax_cols)

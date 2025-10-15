@@ -8,9 +8,10 @@ from tqdm import tqdm
 
 import torch
 from torch import Tensor, nn
+from torch.distributions import Independent, Normal
 
+from flow_matching import Path, ODEProcess, MidpointIntegrator, GoldenSectionSeeker
 from flow_matching.scheduler import OTScheduler
-from flow_matching import Path, ODEProcess
 
 
 class VectorField(nn.Module):
@@ -111,17 +112,19 @@ def main():
 
     # integrate over time
     x_init = torch.randn((10_000, in_dims)).to(device)
-    t = torch.linspace(0, 1, 11).to(device)
+    intervals = torch.tensor([[0.0, 1.0]], dtype=x_init.dtype, device=x_init.device)
+    intervals = intervals.expand(x_init.shape[0], 2)
+    steps = 10
 
     vf = vf.eval()
-    integrator = ODEProcess(vf)
-    sols = integrator.sample(x_init, t, method="midpoint", step_size=0.05)
+    integrator = ODEProcess(vf, MidpointIntegrator())
+    _, x_traj = integrator.sample(x_init, intervals, steps=steps)
 
     # plot path
-    sols = sols.detach().cpu().numpy()
+    sols = x_traj.detach().cpu().numpy()
 
-    ax_cols = math.ceil(len(t) ** 0.5)
-    ax_rows = math.ceil(len(t) / ax_cols)
+    ax_cols = math.ceil(sols.shape[0] ** 0.5)
+    ax_rows = math.ceil(sols.shape[0] / ax_cols)
     fig, axs = plt.subplots(ax_rows, ax_cols, figsize=(ax_cols * 4, ax_rows * 4))
 
     # yes you can flatten axes they are a np.array
@@ -138,16 +141,40 @@ def main():
             sol[:, 0], sol[:, 1], 300, range=((-3, 3), (-3, 3)), norm=norm
         )
 
-        axs[i].set_title(f"t = {t[i]:.2f}")
+        axs[i].set_title(f"step = {i}")
         axs[i].set_xlim([-3, 3])
         axs[i].set_ylim([-3, 3])
         axs[i].set_aspect("equal")
 
-    for i in range(len(t), len(axs)):
+    for i in range(sols.shape[0], len(axs)):
         fig.delaxes(axs[i])
 
     plt.tight_layout()
     plt.show()
+
+    # classification
+    log_p0 = Independent(
+        Normal(torch.zeros(2, device=device), torch.ones(2, device=device)), 1
+    ).log_prob
+
+    x0 = xt_sampler(samples=5, bounds=x0_bounds).to(device)
+    min_t, min_p = integrator.classify(
+        GoldenSectionSeeker(max_evals=20), x0, log_p0, steps=10, est_steps=1, eps=1e-8
+    )
+    print(f"Class t=0.5:\nt_pred: {min_t}\nlog_p: {min_p}")
+
+    x1 = xt_sampler(samples=5, bounds=x1_bounds).to(device)
+    min_t, min_p = integrator.classify(
+        GoldenSectionSeeker(max_evals=20), x1, log_p0, steps=10, est_steps=1, eps=1e-8
+    )
+    print(f"Class t=1.0:\nt_pred: {min_t}\nlog_p: {min_p}")
+
+    # OOD truly is at t=0
+    ood = xt_sampler(samples=5, bounds=(-6.0, -5.0)).to(device)
+    min_t, min_p = integrator.classify(
+        GoldenSectionSeeker(max_evals=20), ood, log_p0, steps=10, est_steps=1, eps=1e-8
+    )
+    print(f"Class OOD:\nt_pred: {min_t}\nlog_p: {min_p}")
 
 
 if __name__ == "__main__":
