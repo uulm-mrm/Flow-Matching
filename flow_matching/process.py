@@ -39,14 +39,14 @@ class ODEProcess:
 
     def sample(
         self, x_init: Tensor, ints: Tensor, steps: int, **vf_extras
-    ) -> tuple[Tensor, list[Tensor]]:
+    ) -> tuple[Tensor, Tensor]:
         """Integrates the vector field along the probability path within the time provided
         Sampling can run in reverse if time is in descending order, but x_init must also match
 
         Args:
             x_init (Tensor): x(t[0]) the initial condition of the ODE, size (B, D...)
             ints (Tensor): start and end point of the interval in which to integrate, size (B, 2)
-            steps (int): number of steps in numerical solution
+            steps (int): number of steps for the ODE solver
             **vf_extras: additional parameters for the model if needed
 
         Returns:
@@ -63,7 +63,7 @@ class ODEProcess:
                 diff_eq, [x_init], ints, steps=steps
             )
 
-        return t_traj, x_traj
+        return t_traj, x_traj[0]
 
     def compute_likelihood_once(
         self,
@@ -80,12 +80,7 @@ class ODEProcess:
             t (Tensor): time points in which to integrate in descending interval [1, 0], size (N)
             log_p0 (Callable[[Tensor], Tensor]): function that calculates log likelihood
                 at t=0 given points at t=0
-            method (str, optional):method which to use for integration.
-                Check torchdiffeq odeint for all possibilities.
-                Defaults to "midpoint".
-            step_size (Optional[float], optional): if the method allows for a step size,
-                the step size to use. Check torchdiffeq odein if possible valid
-                Defaults to None.
+            steps (int): number of steps for the ODE solver
 
         Returns:
             tuple[Tensor, Tensor]: a (B, D) tensor of the positions at t=0
@@ -139,6 +134,7 @@ class ODEProcess:
 
         x0 = sol[-1]
         log_p_x0 = log_p0(x0)
+
         div_x0 = div[-1].squeeze(1)
 
         return x0, log_p_x0 + div_x0
@@ -160,12 +156,7 @@ class ODEProcess:
             t (Tensor): time points in which to integrate in descending interval [1, 0], size (N)
             log_p0 (Callable[[Tensor], Tensor]): function that calculates log likelihood
                 at t=0 given points at t=0
-            method (str, optional):method which to use for integration.
-                Check torchdiffeq odeint for all possibilities.
-                Defaults to "midpoint".
-            step_size (Optional[float], optional): if the method allows for a step size,
-                the step size to use. Check torchdiffeq odein if possible valid
-                Defaults to None.
+            steps (int): number of steps for the ODE solver
             est_steps (int, optional): number of estimations before aggregation. Defaults to 10.
 
         Returns:

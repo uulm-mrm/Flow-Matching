@@ -16,14 +16,15 @@ class Integrator:
         """Does one step of the numerical ODE solver
 
         Args:
-            func (Callable[[Tensor, Tensor], Tensor]): f from dx/dt = f(t, x)
+            func (Callable[[Tensor, list[Tensor]], list[Tensor]]): f from dx/dt = f(t, x)
             tn (Tensor): current time, size (B,)
-            xn (Tensor): current solution, size (B, D...)
+            xn (list[Tensor]): current solution, size (B, D...)
             dt (Tensor): delta time increment, size (B, )
 
         Returns:
-            tuple[Tensor, Tensor]: next iteration time and solution
+            tuple[Tensor, list[Tensor]]: next iteration time and solution
         """
+
         raise NotImplementedError
 
     def integrate(
@@ -37,14 +38,14 @@ class Integrator:
         starting from some initial condition `x0`, iterating `steps` number of times
 
         Args:
-            func (Callable[[Tensor, Tensor], Tensor]): dx/dt = f(t, x) ODE to solve
-            x0 (Tensor): batch of initial conditions, size (B, D...)
+            func (Callable[[Tensor, list[Tensor]], list[Tensor]]): dx/dt = f(t, x) ODE to solve
+            x0 (list[Tensor]): batch of initial conditions, size (B, D...)
             ints (Tensor): batch of intervals in ascending or descending orders, size (B, 2)
             steps (int, optional): number of steps to numerically solve for. Defaults to 20.
 
         Returns:
-            tuple[Tensor, Tensor]: trajectory of time and solutions given the parameters,
-            size (steps+1, B) for time and (steps+1, B, D...) for solutions
+            tuple[Tensor, list[Tensor]]: trajectory of time and solutions given the parameters,
+            size (steps+1, B) for time and [(steps+1, B, D...), ...] for solutions
         """
         t0, t1 = ints[:, 0].unsqueeze(1), ints[:, 1].unsqueeze(1)
         dt = (t1 - t0) / steps
