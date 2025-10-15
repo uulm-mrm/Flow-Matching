@@ -34,8 +34,6 @@ class VectorField(nn.Module):
         )
 
     def forward(self, xt: Tensor, t: Tensor) -> Tensor:
-        t = t.view(-1, self.t_d).expand(xt.shape[0], self.t_d)
-
         z = torch.cat([xt, t], dim=-1)
 
         return self.mlp(z)
@@ -58,13 +56,10 @@ def push_forward(
     t0, t1 = t_int
 
     # s is local time for correct path interpolation
-    s = torch.rand((x0.shape[0],)).float()
+    s = torch.rand((x0.shape[0], 1), device=x0.device)
 
     # t is the map from local to global time for the model to predict
     t = s * (t1 - t0) + t0
-
-    t = t.to(x0.device)
-    s = s.to(x0.device)
 
     ps = path.sample(x0, x1, s)
 
