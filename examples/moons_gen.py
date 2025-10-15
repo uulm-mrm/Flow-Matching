@@ -11,10 +11,8 @@ from matplotlib import cm
 
 from sklearn.datasets import make_moons
 
+from flow_matching import Path, ODEProcess, MidpointIntegrator
 from flow_matching.scheduler import OTScheduler
-from flow_matching import Path
-from flow_matching import ODEProcess
-from flow_matching import MidpointIntegrator
 
 DEVICE = "cuda:0"
 

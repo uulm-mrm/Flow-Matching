@@ -9,9 +9,8 @@ import matplotlib.pyplot as plt
 
 from sklearn.datasets import make_moons
 
+from flow_matching import Path, ODEProcess, MidpointIntegrator
 from flow_matching.scheduler import OTScheduler
-from flow_matching import Path
-from flow_matching import ODEProcess
 
 DEVICE = "cuda:0"
 
@@ -75,7 +74,7 @@ def main():
 
     in_dims = 2
     h_dims = 512
-    epochs = 10_000
+    epochs = 1_000
 
     vf = VectorField(in_dims=in_dims, h_dims=h_dims, t_dims=1).to(DEVICE)
     p = Path(OTScheduler())
@@ -103,18 +102,20 @@ def main():
     # integrate over time
     x0 = torch.randn((10_000, in_dims)).to(DEVICE)
     y = torch.randint(0, 2, (x0.shape[0], 1), device=DEVICE)
-    t = torch.linspace(0, 1, 11).to(DEVICE)
+    intervals = torch.tensor([[0.0, 1.0]], dtype=x0.dtype, device=x0.device)
+    intervals = intervals.expand(x0.shape[0], 2)
+    steps = 10
 
     vf = vf.eval()
-    integrator = ODEProcess(vf)
-    sols = integrator.sample(x0, t, method="midpoint", step_size=0.05, c=y)
+    integrator = ODEProcess(vf, MidpointIntegrator())
+    _, x_traj = integrator.sample(x0, intervals, steps=steps, c=y)
 
     # plot path
-    sols = sols.detach().cpu().numpy()
+    sols = x_traj.detach().cpu().numpy()
     y = y.detach().cpu().flatten().numpy()
 
-    ax_cols = math.ceil(len(t) ** 0.5)
-    ax_rows = math.ceil(len(t) / ax_cols)
+    ax_cols = math.ceil(sols.shape[0] ** 0.5)
+    ax_rows = math.ceil(sols.shape[0] / ax_cols)
     fig, axs = plt.subplots(ax_rows, ax_cols, figsize=(ax_cols * 4, ax_rows * 4))
 
     # yes you can flatten axes they are a np.array
@@ -122,12 +123,12 @@ def main():
     for i, sol in enumerate(sols):
         axs[i].scatter(sol[:, 0], sol[:, 1], c=y, s=10)
 
-        axs[i].set_title(f"t = {t[i]:.2f}")
+        axs[i].set_title(f"step = {i}")
         axs[i].set_xlim([-3, 3])
         axs[i].set_ylim([-3, 3])
         axs[i].set_aspect("equal")
 
-    for i in range(len(t), len(axs)):
+    for i in range(sols.shape[0], len(axs)):
         fig.delaxes(axs[i])
 
     plt.tight_layout()
