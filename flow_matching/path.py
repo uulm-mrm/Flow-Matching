@@ -2,7 +2,7 @@ from dataclasses import dataclass, field
 
 from torch import Tensor
 
-from flow_matching.scheduler import Scheduler
+from .scheduler import Scheduler
 
 
 def broadcast_to(x: Tensor, y: Tensor) -> Tensor:

@@ -3,8 +3,8 @@ from typing import Callable
 import torch
 from torch import Tensor, nn
 
-from flow_matching.integrator import Integrator
-from flow_matching.seeker import Seeker
+from .integrator import Integrator
+from .seeker import Seeker
 
 
 def gradient(y: Tensor, x: Tensor) -> Tensor:

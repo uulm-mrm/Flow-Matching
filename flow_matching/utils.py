@@ -1,7 +1,7 @@
 import torch
 from torch import nn, Tensor
 
-from flow_matching.path import Path
+from .path import Path
 
 
 def push_forward(

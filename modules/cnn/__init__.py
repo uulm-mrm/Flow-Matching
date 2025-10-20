@@ -1,6 +1,6 @@
-from modules.cnn.conv import TimeConditionedConv
-from modules.cnn.upconv import TimeConditionedUpConv
-from modules.cnn.attn import (
+from .conv import TimeConditionedConv
+from .upconv import TimeConditionedUpConv
+from .attn import (
     ConvBlockAttention,
     SpatialAttention,
     ChannelAttention,

@@ -1,7 +1,7 @@
 from torch import Tensor, nn
 from torch.nn import functional as F
 
-from modules.utils import FiLM, TimeDependentModule
+from ..utils import FiLM, TimeDependentModule
 
 
 class TimeConditionedConv(TimeDependentModule):
