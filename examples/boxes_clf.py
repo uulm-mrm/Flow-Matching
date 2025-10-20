@@ -1,5 +1,4 @@
 import math
-from typing import Callable
 
 from matplotlib import pyplot as plt
 from matplotlib import cm
@@ -11,6 +10,7 @@ from torch import Tensor, nn
 from torch.distributions import Independent, Normal
 
 from flow_matching import Path, ODEProcess, MidpointIntegrator, GoldenSectionSeeker
+from flow_matching.utils import push_forward_all
 from flow_matching.scheduler import OTScheduler
 
 
@@ -46,29 +46,6 @@ def xt_sampler(samples: int, bounds: tuple[float, float]) -> Tensor:
     return x
 
 
-def push_forward(
-    x0: Tensor,
-    x1: Tensor,
-    t_int: tuple[float, float],
-    path: Path,
-    vf_fwd: Callable[[Tensor, Tensor], Tensor],
-) -> Tensor:
-    t0, t1 = t_int
-
-    # s is local time for correct path interpolation
-    s = torch.rand((x0.shape[0], 1), device=x0.device)
-
-    # t is the map from local to global time for the model to predict
-    t = s * (t1 - t0) + t0
-
-    ps = path.sample(x0, x1, s)
-
-    dxt_hat = vf_fwd(ps.xt, t)
-    dxt = ps.dxt / (t1 - t0)
-
-    return (dxt_hat - dxt).square().mean()
-
-
 def main():
     torch.manual_seed(42)
 
@@ -95,10 +72,7 @@ def main():
 
         x_init = torch.randn_like(x1)
 
-        loss1 = push_forward(x_init, x0, (0.0, 0.5), p, vf.forward)
-        loss2 = push_forward(x0, x1, (0.5, 1.0), p, vf.forward)
-
-        loss = loss1 + loss2
+        loss = push_forward_all((x_init, x0, x1), (0.0, 0.5, 1.0), p, vf)
 
         loss.backward()
         optim.step()
