@@ -1,3 +1,5 @@
+from tqdm import tqdm
+
 import torch
 from torch import Tensor
 
@@ -11,11 +13,18 @@ class GaussianMixture:
     equidistant from other Gaussians.
     """
 
-    def __init__(self, n: int, dims: int, sigma: float, r: float, device: str) -> None:
+    def __init__(
+        self,
+        n: int,
+        shape: tuple[int, ...],
+        sigma: float,
+        r: float,
+        device: str,
+    ) -> None:
         """
         Args:
             n (int): number of gaussians
-            dims (int): dimensionality of space
+            shape (tuple[int, ...]): actual shape of points that are sampled
             sigma (float): deviation of gaussians
             r (float): radius of the sphere centered around 0
             device (str): device on which to port
@@ -23,7 +32,9 @@ class GaussianMixture:
         self.device = device
 
         self.n = torch.tensor(n, device=self.device)
-        self.dims = torch.tensor(dims, device=self.device)
+        self.shape = shape
+        self.dims = torch.prod(torch.tensor(shape, device=self.device))
+
         self.sigma = torch.tensor(sigma, device=self.device)
         self.r = torch.tensor(r, device=self.device)
 
@@ -37,7 +48,7 @@ class GaussianMixture:
     def __find_means(self, steps: int, lr: float, p: int = 2) -> Tensor:
         means = self.__random_on_sphere()  # (n, dims)
 
-        for it in range(steps):
+        for it in tqdm(range(steps), desc="Finding Gaussian Mixture Centers"):
             # calculate m_i - m_j for all m in means
             diffs = means[:, None] - means[None]  # (n, n, dims)
             dists = diffs.norm(dim=2) + 1e-12  # (n, n)
@@ -80,12 +91,14 @@ class GaussianMixture:
 
         comp_idx = torch.cat([uniform_idx, leftover_idx])
 
-        return self.means[comp_idx] + self.sigma * noise
+        sampled_points = self.means[comp_idx] + self.sigma * noise
+        return sampled_points.reshape(samples, *self.shape)
 
     def log_likelihood(self, x: Tensor) -> Tensor:
         """
         Calculates the log likelihood of x given this Gaussian mixture
         """
+        x = x.flatten(1)
 
         diffs = x[:, None] - self.means[None]
 

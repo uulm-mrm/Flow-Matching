@@ -37,7 +37,9 @@ def main():
 
     # dims = C * H * W
     # you may need to wait for this thing to optimize itself nicely in higher dims
-    x0_sampler = GaussianMixture(n=8, dims=1 * 28 * 28, sigma=0.5, r=1.0, device=device)
+    x0_sampler = GaussianMixture(
+        n=8, shape=(1, 28, 28), sigma=0.5, r=1.0, device=device
+    )
 
     # model prep
     vf = CNNVF(t_dims=t_dims).to(device)
@@ -56,7 +58,7 @@ def main():
             x1 = x1.to(device)
 
             # sample x0
-            x0 = x0_sampler.sample(x1.size(0)).reshape(-1, 1, 28, 28)
+            x0 = x0_sampler.sample(x1.size(0))
 
             # sample time
             t = torch.rand((x1.shape[0],), dtype=torch.float32, device=device)
@@ -91,7 +93,7 @@ def main():
     imgs = 1024
     top_k = 16
 
-    x0 = x0_sampler.sample(imgs).reshape(imgs, 1, 28, 28).to(device)
+    x0 = x0_sampler.sample(imgs)
     intervals = torch.tensor([[0.0, 1.0]], dtype=x0.dtype, device=x0.device)
     intervals = intervals.expand(x0.shape[0], 2)
     steps = 10
@@ -120,6 +122,7 @@ def main():
         axs[i].set_aspect("equal")
 
     plt.savefig("./examples/mnist/top_k_imgs.png")
+    plt.show()
 
 
 if __name__ == "__main__":

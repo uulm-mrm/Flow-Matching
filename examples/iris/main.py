@@ -4,11 +4,11 @@ from tqdm import tqdm
 
 import torch
 from torch import nn, Tensor
-from torch.distributions import Independent, Normal
 
 from flow_matching import Path, ODEProcess, MidpointIntegrator, GoldenSectionSeeker
 from flow_matching.utils import push_forward_all
 from flow_matching.scheduler import OTScheduler
+from flow_matching.distributions import GaussianMixture
 
 from examples.iris.data_utils import get_iris
 
@@ -49,6 +49,8 @@ def main():
     # dataset
     x1, x2, x3 = get_iris(device=device)
 
+    x0_sampler = GaussianMixture(n=3, shape=(in_dims,), sigma=0.5, r=1.0, device=device)
+
     # fm stuff
     vf = VectorField(in_d=in_dims, h_d=h_dims, t_d=1).to(device)
     p = Path(OTScheduler())
@@ -57,7 +59,7 @@ def main():
     for _ in (pbar := tqdm(range(epochs))):
         optim.zero_grad()
 
-        x_init = torch.randn_like(x1)
+        x_init = x0_sampler.sample(x1.shape[0])
 
         loss = push_forward_all((x_init, x1, x2, x3), (0.0, 0.33, 0.66, 1.0), p, vf)
 
@@ -71,10 +73,7 @@ def main():
     integrator = ODEProcess(vf, MidpointIntegrator())
     seeker = GoldenSectionSeeker(max_evals=10)
     steps = 10
-
-    log_p0 = Independent(
-        Normal(torch.zeros(4, device=device), torch.ones(4, device=device)), 1
-    ).log_prob
+    log_p0 = x0_sampler.log_likelihood
 
     min_t, min_p = integrator.classify(
         seeker, x1[:5], log_p0, steps=steps, est_steps=1, eps=1e-4
