@@ -189,12 +189,6 @@ class ODEProcess:
         eps: float = 1e-3,
         **vf_extras
     ):
-        """you get a set of X, and for all of them the a, b is 0 to 1
-        you need to redefine self.compute_likelihood so that it only takes the time,
-        such that the lower bound of the ints is for all 0
-        and only the upper bound is moving
-        """
-
         def score_func(upper_t: Tensor) -> Tensor:
             ints = torch.zeros((upper_t.shape[0], 2), dtype=x.dtype, device=x.device)
             ints[:, 0] = upper_t
