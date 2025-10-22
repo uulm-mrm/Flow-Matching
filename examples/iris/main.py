@@ -48,6 +48,7 @@ def main():
 
     # dataset
     x1, x2, x3 = get_iris(device=device)
+    anchors = (0.0, 1.0, 2.0, 3.0)
 
     x0_sampler = GaussianMixture(n=3, shape=(in_dims,), sigma=0.5, r=1.0, device=device)
 
@@ -61,7 +62,7 @@ def main():
 
         x_init = x0_sampler.sample(x1.shape[0])
 
-        loss = push_forward_all((x_init, x1, x2, x3), (0.0, 0.33, 0.66, 1.0), p, vf)
+        loss = push_forward_all((x_init, x1, x2, x3), anchors, p, vf)
 
         loss.backward()
         optim.step()
@@ -74,19 +75,20 @@ def main():
     seeker = GoldenSectionSeeker(max_evals=10)
     steps = 10
     log_p0 = x0_sampler.log_likelihood
+    interval = (anchors[0], anchors[-1])
 
     min_t, min_p = integrator.classify(
-        seeker, x1[:5], log_p0, steps=steps, est_steps=1, eps=1e-4
+        seeker, x1[:5], log_p0, interval, steps=steps, est_steps=1, eps=1e-4
     )
     pprint(f"Class 0 @ 0.33:\nt_pred: {min_t}\nlog_p: {min_p}")
 
     min_t, min_p = integrator.classify(
-        seeker, x2[:5], log_p0, steps=steps, est_steps=1, eps=1e-4
+        seeker, x2[:5], log_p0, interval, steps=steps, est_steps=1, eps=1e-4
     )
     pprint(f"Class 1 @ 0.66:\nt_pred: {min_t}\nlog_p: {min_p}")
 
     min_t, min_p = integrator.classify(
-        seeker, x3[:5], log_p0, steps=steps, est_steps=1, eps=1e-4
+        seeker, x3[:5], log_p0, interval, steps=steps, est_steps=1, eps=1e-4
     )
     pprint(f"Class 2 @ 1.0:\nt_pred: {min_t}\nlog_p: {min_p}")
 
@@ -94,6 +96,7 @@ def main():
         seeker,
         torch.rand((5, 4), device=device) - 3,
         log_p0,
+        interval,
         steps=steps,
         est_steps=1,
         eps=1e-4,

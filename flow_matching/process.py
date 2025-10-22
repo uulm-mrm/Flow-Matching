@@ -183,6 +183,7 @@ class ODEProcess:
         seeker: Seeker,
         x: Tensor,
         log_p0: Callable[[Tensor], Tensor],
+        interval: tuple[float, float],
         steps: int = 10,
         est_steps: int = 1,
         eps: float = 1e-3,
@@ -205,8 +206,8 @@ class ODEProcess:
             # looking for max log_p is the same as minimizing -log_p
             return -log_p
 
-        a = torch.zeros(x.shape[0], dtype=x.dtype, device=x.device)
-        b = torch.ones(x.shape[0], dtype=x.dtype, device=x.device)
+        a = torch.zeros(x.shape[0], dtype=x.dtype, device=x.device) * interval[0]
+        b = torch.ones(x.shape[0], dtype=x.dtype, device=x.device) * interval[1]
 
         min_t, min_p = seeker.search(score_func, a, b, eps=eps)
 

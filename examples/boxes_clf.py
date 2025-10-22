@@ -72,7 +72,7 @@ def main():
 
         x_init = torch.randn_like(x1)
 
-        loss = push_forward_all((x_init, x0, x1), (0.0, 0.5, 1.0), p, vf)
+        loss = push_forward_all((x_init, x0, x1), (0.0, 1.0, 2.0), p, vf)
 
         loss.backward()
         optim.step()
@@ -81,7 +81,7 @@ def main():
 
     # integrate over time
     x_init = torch.randn((10_000, in_dims)).to(device)
-    intervals = torch.tensor([[0.0, 1.0]], dtype=x_init.dtype, device=x_init.device)
+    intervals = torch.tensor([[0.0, 2.0]], dtype=x_init.dtype, device=x_init.device)
     intervals = intervals.expand(x_init.shape[0], 2)
     steps = 10
 
@@ -125,23 +125,25 @@ def main():
     log_p0 = Independent(
         Normal(torch.zeros(2, device=device), torch.ones(2, device=device)), 1
     ).log_prob
+    seeker = GoldenSectionSeeker(max_evals=20)
+    interval = (0.0, 2.0)
 
     x0 = xt_sampler(samples=5, bounds=x0_bounds).to(device)
     min_t, min_p = integrator.classify(
-        GoldenSectionSeeker(max_evals=20), x0, log_p0, steps=10, est_steps=1, eps=1e-8
+        seeker, x0, log_p0, interval, steps=10, est_steps=1, eps=1e-8
     )
     print(f"Class t=0.5:\nt_pred: {min_t}\nlog_p: {min_p}")
 
     x1 = xt_sampler(samples=5, bounds=x1_bounds).to(device)
     min_t, min_p = integrator.classify(
-        GoldenSectionSeeker(max_evals=20), x1, log_p0, steps=10, est_steps=1, eps=1e-8
+        seeker, x1, log_p0, interval, steps=10, est_steps=1, eps=1e-8
     )
     print(f"Class t=1.0:\nt_pred: {min_t}\nlog_p: {min_p}")
 
     # OOD truly is at t=0
     ood = xt_sampler(samples=5, bounds=(-6.0, -5.0)).to(device)
     min_t, min_p = integrator.classify(
-        GoldenSectionSeeker(max_evals=20), ood, log_p0, steps=10, est_steps=1, eps=1e-8
+        seeker, ood, log_p0, interval, steps=10, est_steps=1, eps=1e-8
     )
     print(f"Class OOD:\nt_pred: {min_t}\nlog_p: {min_p}")
 
