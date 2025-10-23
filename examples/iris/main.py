@@ -78,27 +78,21 @@ def main():
     interval = (anchors[0], anchors[-1])
 
     # plot logp
-    dec = 0.05
-    t = anchors[-1]
-    probs = []
-    ts = []
-    x = x2[0].reshape(1, in_dims)
-    while t > anchors[0]:
-        _, prob = integrator.compute_likelihood(
-            x,
-            torch.tensor([[t, 0.0]], device=device),
-            log_p0,
-            steps=steps,
-            est_steps=5,
-        )
+    t = torch.linspace(0.0, anchors[-1], steps=30, device=device)
+    intervals = torch.zeros((30, 2), dtype=torch.float32, device=device)
+    intervals[:, 0] = t
 
-        probs.append(torch.exp(prob).item())
-        ts.append(t)
-
-        t -= dec
+    x = x2[0].reshape(1, in_dims).repeat_interleave(30, dim=0)
+    _, prob = integrator.compute_likelihood(
+        x,
+        torch.tensor(intervals, device=device),
+        log_p0,
+        steps=steps,
+        est_steps=5,
+    )
 
     plt.gca().invert_xaxis()
-    plt.plot(ts, probs)
+    plt.plot(intervals[:, 0].cpu().numpy(), torch.exp(prob).cpu().numpy())
     plt.show()
 
     # classify
