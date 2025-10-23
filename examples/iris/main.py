@@ -84,11 +84,7 @@ def main():
 
     x = x2[0].reshape(1, in_dims).repeat_interleave(30, dim=0)
     _, prob = integrator.compute_likelihood(
-        x,
-        torch.tensor(intervals, device=device),
-        log_p0,
-        steps=steps,
-        est_steps=5,
+        x, intervals, log_p0, steps=steps, est_steps=5
     )
 
     plt.gca().invert_xaxis()

@@ -176,7 +176,10 @@ class ODEProcess:
             log_p += log_p_est
             sol += sol_est
 
-        return sol / est_steps, log_p / est_steps  # type: ignore
+        sol = sol / est_steps
+        log_p = log_p / est_steps / torch.prod(torch.tensor(x1.shape[1:]))
+
+        return sol, log_p  # type: ignore
 
     def classify(
         self,
