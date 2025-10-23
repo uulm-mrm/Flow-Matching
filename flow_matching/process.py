@@ -189,16 +189,35 @@ class ODEProcess:
         eps: float = 1e-3,
         **vf_extras
     ):
+        """Classifies a set of points inside an interval based on their probabilities
+
+        Args:
+            seeker (Seeker): seeker that searches for the time at which x is most probable
+            x (Tensor): points to classify, size (B, D...)
+            log_p0 (Callable[[Tensor], Tensor]): function that calculates the log probability at t=0
+            interval (tuple[float, float]): interval in which to search for classes
+            steps (int, optional): number of ODE steps. Defaults to 10.
+            est_steps (int, optional): number of log prob estimation steps. Defaults to 1.
+            eps (float, optional): minimum subinterval size under which not to search anymore.
+                Defaults to 1e-3.
+        """
+
         def score_func(upper_t: Tensor) -> Tensor:
             ints = torch.zeros((upper_t.shape[0], 2), dtype=x.dtype, device=x.device)
             ints[:, 0] = upper_t
 
+            # in case there is more to search than there are x in batch
             _, log_p = self.compute_likelihood(
-                x, ints, log_p0, steps=steps, est_steps=est_steps, **vf_extras
+                x.repeat_interleave(upper_t.shape[0] // x.shape[0], dim=0),
+                ints,
+                log_p0,
+                steps=steps,
+                est_steps=est_steps,
+                **vf_extras
             )
 
             # looking for max log_p is the same as minimizing -log_p
-            return -log_p
+            return -torch.exp(log_p)
 
         a = torch.zeros(x.shape[0], dtype=x.dtype, device=x.device) * interval[0]
         b = torch.ones(x.shape[0], dtype=x.dtype, device=x.device) * interval[1]

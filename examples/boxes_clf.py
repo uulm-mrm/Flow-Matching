@@ -9,7 +9,7 @@ import torch
 from torch import Tensor, nn
 from torch.distributions import Independent, Normal
 
-from flow_matching import Path, ODEProcess, MidpointIntegrator, GoldenSectionSeeker
+from flow_matching import Path, ODEProcess, MidpointIntegrator, NaiveMidpoints
 from flow_matching.utils import push_forward_all
 from flow_matching.scheduler import OTScheduler
 
@@ -125,7 +125,7 @@ def main():
     log_p0 = Independent(
         Normal(torch.zeros(2, device=device), torch.ones(2, device=device)), 1
     ).log_prob
-    seeker = GoldenSectionSeeker(max_evals=20)
+    seeker = NaiveMidpoints(max_evals=30, iters=3)
     interval = (0.0, 2.0)
 
     x0 = xt_sampler(samples=5, bounds=x0_bounds).to(device)

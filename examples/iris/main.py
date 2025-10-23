@@ -1,11 +1,11 @@
-from pprint import pprint
+import matplotlib.pyplot as plt
 
 from tqdm import tqdm
 
 import torch
 from torch import nn, Tensor
 
-from flow_matching import Path, ODEProcess, MidpointIntegrator, GoldenSectionSeeker
+from flow_matching import Path, ODEProcess, MidpointIntegrator, NaiveMidpoints
 from flow_matching.utils import push_forward_all
 from flow_matching.scheduler import OTScheduler
 from flow_matching.distributions import GaussianMixture
@@ -69,39 +69,47 @@ def main():
 
         pbar.set_description(f"Loss: {loss.item():.3f}")
 
-    # classification
+    # postprocessing
     vf.eval()
     integrator = ODEProcess(vf, MidpointIntegrator())
-    seeker = GoldenSectionSeeker(max_evals=10)
+    seeker = NaiveMidpoints(max_evals=50, iters=5)
     steps = 10
     log_p0 = x0_sampler.log_likelihood
     interval = (anchors[0], anchors[-1])
 
-    min_t, min_p = integrator.classify(
-        seeker, x1[:5], log_p0, interval, steps=steps, est_steps=1, eps=1e-4
-    )
-    pprint(f"Class 0 @ 0.33:\nt_pred: {min_t}\nlog_p: {min_p}")
+    # plot logp
+    dec = 0.05
+    t = anchors[-1]
+    probs = []
+    ts = []
+    x = x2[0].reshape(1, in_dims)
+    while t > anchors[0]:
+        _, prob = integrator.compute_likelihood(
+            x,
+            torch.tensor([[t, 0.0]], device=device),
+            log_p0,
+            steps=steps,
+            est_steps=5,
+        )
 
-    min_t, min_p = integrator.classify(
-        seeker, x2[:5], log_p0, interval, steps=steps, est_steps=1, eps=1e-4
-    )
-    pprint(f"Class 1 @ 0.66:\nt_pred: {min_t}\nlog_p: {min_p}")
+        probs.append(torch.exp(prob).item())
+        ts.append(t)
 
-    min_t, min_p = integrator.classify(
-        seeker, x3[:5], log_p0, interval, steps=steps, est_steps=1, eps=1e-4
-    )
-    pprint(f"Class 2 @ 1.0:\nt_pred: {min_t}\nlog_p: {min_p}")
+        t -= dec
 
-    min_t, min_p = integrator.classify(
-        seeker,
-        torch.rand((5, 4), device=device) - 3,
-        log_p0,
-        interval,
-        steps=steps,
-        est_steps=1,
-        eps=1e-4,
+    plt.gca().invert_xaxis()
+    plt.plot(ts, probs)
+    plt.show()
+
+    # classify
+    x = torch.cat(
+        [x1[:5], x2[:5], x3[:5], torch.rand((5, 4), device=device) - 3], dim=0
     )
-    pprint(f"Class OOD:\nt_pred: {min_t}\nlog_p: {min_p}")
+    min_t, prob = integrator.classify(
+        seeker, x, log_p0, interval, steps=steps, est_steps=5, eps=1e-8
+    )
+    print(f"t_pred:\n{min_t}")
+    print(f"prob:\n{prob}")
 
 
 if __name__ == "__main__":
