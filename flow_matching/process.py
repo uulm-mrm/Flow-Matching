@@ -177,7 +177,7 @@ class ODEProcess:
             sol += sol_est
 
         sol = sol / est_steps
-        log_p = log_p / est_steps / torch.prod(torch.tensor(x1.shape[1:]))
+        log_p = log_p / est_steps
 
         return sol, log_p  # type: ignore
 
@@ -220,7 +220,7 @@ class ODEProcess:
             )
 
             # looking for max log_p is the same as minimizing -log_p
-            return -torch.exp(log_p)
+            return -log_p
 
         a = torch.zeros(x.shape[0], dtype=x.dtype, device=x.device) * interval[0]
         b = torch.ones(x.shape[0], dtype=x.dtype, device=x.device) * interval[1]

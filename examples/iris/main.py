@@ -88,7 +88,7 @@ def main():
     )
 
     plt.gca().invert_xaxis()
-    plt.plot(intervals[:, 0].cpu().numpy(), torch.exp(prob).cpu().numpy())
+    plt.plot(intervals[:, 0].cpu().numpy(), prob.cpu().numpy())
     plt.show()
 
     # classify
