@@ -4,11 +4,10 @@ from tqdm import tqdm
 
 import torch
 from torch import nn, Tensor
+from torch.distributions import Independent, Normal
 
-from flow_matching import Path, ODEProcess, MidpointIntegrator, NaiveMidpoints
-from flow_matching.utils import push_forward_all
-from flow_matching.scheduler import OTScheduler
-from flow_matching.distributions import GaussianMixture
+from flow_matching import MultiPath, ODEProcess, MidpointIntegrator, NaiveMidpoints
+from flow_matching.scheduler import CosineMultiScheduler
 
 from examples.iris.data_utils import get_iris
 
@@ -49,29 +48,30 @@ def main():
 
     # dataset
     x1, x2, x3 = get_iris(device=device)
-    anchors = (0.0, 0.3, 0.6, 1.0)
-
-    x0_sampler = GaussianMixture(
-        n=16, shape=(in_dims,), sigma=0.5, r=1.0, device=device
-    )
+    t_anchors = torch.tensor([0.0, 0.33, 0.66, 1.0], dtype=torch.float32, device=device)
 
     # fm stuff
     vf = VectorField(in_d=in_dims, h_d=h_dims, t_d=1).to(device)
-    p = Path(OTScheduler())
+    p = MultiPath(CosineMultiScheduler(k=0.33))
     optim = torch.optim.AdamW(vf.parameters(), lr=1e-3)
 
     for _ in (pbar := tqdm(range(epochs))):
         optim.zero_grad()
 
-        # x_init = x0_sampler.sample(batch_size)
-
         shuffle_idx = torch.randperm(batch_size)
-        loss = push_forward_all(
-            (x1[shuffle_idx], x2[shuffle_idx], x3[shuffle_idx], x1[shuffle_idx]),
-            anchors,
-            p,
-            vf,
+        x0 = torch.randn_like(x1)
+
+        t = torch.rand((batch_size,), dtype=torch.float32, device=device)
+
+        ps = p.sample(
+            torch.stack([x0, x1[shuffle_idx], x2[shuffle_idx], x3[shuffle_idx]], dim=0),
+            t_anchors,
+            t,
         )
+
+        dxt_hat = vf.forward(ps.xt, ps.t)
+
+        loss = (dxt_hat - ps.dxt).square().mean()
 
         loss.backward()
         optim.step()
@@ -83,13 +83,15 @@ def main():
     integrator = ODEProcess(vf, MidpointIntegrator())
     seeker = NaiveMidpoints(max_evals=50, iters=5)
     steps = 10
-    log_p0 = x0_sampler.log_likelihood
-    interval = (anchors[0], anchors[-1])
+    log_p0 = Independent(
+        Normal(torch.zeros(4, device=device), torch.ones(4, device=device)), 1
+    ).log_prob
+    interval = (t_anchors[0], t_anchors[-1])
 
     # plot logp
     t_steps = 50
     batch_size = 50
-    t = torch.linspace(0.0, anchors[-1], steps=t_steps, device=device).repeat(
+    t = torch.linspace(0.0, t_anchors[-1], steps=t_steps, device=device).repeat(
         batch_size
     )
     intervals = torch.zeros(
@@ -111,14 +113,14 @@ def main():
     plt.show()
 
     # classify
-    # x = torch.cat(
-    #     [x1[:5], x2[:5], x3[:5], torch.rand((5, 4), device=device) - 3], dim=0
-    # )
-    # min_t, prob = integrator.classify(
-    #     seeker, x, log_p0, interval, steps=steps, est_steps=5, eps=1e-8
-    # )
-    # print(f"t_pred:\n{min_t}")
-    # print(f"prob:\n{prob}")
+    x = torch.cat(
+        [x1[:5], x2[:5], x3[:5], torch.rand((5, 4), device=device) - 3], dim=0
+    )
+    min_t, prob = integrator.classify(
+        seeker, x, log_p0, (0.0, 1.0), steps=steps, est_steps=5, eps=1e-8
+    )
+    print(f"t_pred:\n{min_t}")
+    print(f"prob:\n{prob}")
 
 
 if __name__ == "__main__":
