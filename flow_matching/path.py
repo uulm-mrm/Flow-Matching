@@ -2,7 +2,7 @@ from dataclasses import dataclass, field
 
 from torch import Tensor
 
-from .scheduler import Scheduler
+from .scheduler import Scheduler, MultiScheduler
 
 
 def broadcast_to(x: Tensor, y: Tensor) -> Tensor:
@@ -16,9 +16,9 @@ def broadcast_to(x: Tensor, y: Tensor) -> Tensor:
         Tensor: broadcasted x from (B,) to (B, 1...) to match y
     """
 
-    expand_to = len(y.shape) - 1
+    expand_to = len(y.shape) - len(x.shape)
 
-    x = x.view(-1, *([1] * expand_to))
+    x = x.view(*x.shape, *([1] * expand_to))
 
     return x
 
@@ -57,3 +57,46 @@ class Path:
         dxt = self.sched.d_alpha(t) * x1 + self.sched.d_sigma(t) * x0
 
         return PathSample(xt, dxt, t)
+
+
+class MultiPath:
+    """
+    Samples the probability path at different times for the vector field,
+    For an arbitrary number of target densities
+    """
+
+    def __init__(self, sched: MultiScheduler) -> None:
+        self.sched = sched
+
+    def sample(self, x_anchors: Tensor, t_anchors: Tensor, t: Tensor) -> PathSample:
+        """Samples the probability path to return x at time t and speed of x at t
+
+        Args:
+            x_anchors (Tensor): anchors which to pass along the path, size (N, B, ...)
+            t_anchors (Tensor): times that those anchors belong to, size (N,)
+            t (Tensor): time to sample for, size (B,)
+
+        Returns:
+            PathSample: dataclass with xt, dxt, t
+        """
+
+        # make this quicker or sth
+        weights = self.sched.weight(t, t_anchors)  # (N, B)
+        weight_sum = weights.sum(dim=0)  # (B,)
+
+        d_weights = self.sched.d_weight(t, t_anchors)  # (N, B)
+        d_weight_sum = d_weights.sum(dim=0)  # (B,)
+
+        norm_weights = weights / weight_sum  # (N, B)
+        d_norm_weights = d_weights * weight_sum - d_weight_sum * weights / (
+            weight_sum * weight_sum
+        )  # (N, B)
+
+        # (N, B, ...)
+        norm_weights = broadcast_to(norm_weights, x_anchors)
+        d_norm_weights = broadcast_to(d_norm_weights, x_anchors)
+
+        xt = (norm_weights * x_anchors).sum(dim=0)  # (B, ...)
+        dxt = (d_norm_weights * x_anchors).sum(dim=0)  # (B, ...)
+
+        return PathSample(xt, dxt, broadcast_to(t, x_anchors[0]))

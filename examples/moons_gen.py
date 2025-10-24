@@ -11,8 +11,8 @@ from matplotlib import cm
 
 from sklearn.datasets import make_moons
 
-from flow_matching import Path, ODEProcess, MidpointIntegrator
-from flow_matching.scheduler import OTScheduler
+from flow_matching import MultiPath, ODEProcess, MidpointIntegrator
+from flow_matching.scheduler import CosineMultiScheduler
 
 DEVICE = "cuda:0"
 
@@ -68,8 +68,10 @@ def main():
     h_dims = 512
     epochs = 1_000
 
+    t_anchors = torch.tensor([0.0, 1.0], dtype=torch.float32, device=DEVICE)
+
     vf = VectorField(in_dims=in_dims, h_dims=h_dims, t_dims=1).to(DEVICE)
-    p = Path(OTScheduler())
+    p = MultiPath(CosineMultiScheduler(k=1.0))
     optim = torch.optim.AdamW(vf.parameters(), lr=1e-3)
 
     for _ in (pbar := tqdm(range(epochs))):
@@ -79,7 +81,7 @@ def main():
         x1 = x1_sampler(batch_size).to(DEVICE)
         t = torch.rand((batch_size,), dtype=torch.float32, device=DEVICE)
 
-        ps = p.sample(x0, x1, t)
+        ps = p.sample(torch.stack([x0, x1], dim=0), t_anchors, t)
 
         dxt_hat = vf.forward(ps.xt, ps.t)
 
