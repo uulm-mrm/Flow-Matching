@@ -9,9 +9,8 @@ import torch
 from torch import Tensor, nn
 from torch.distributions import Independent, Normal
 
-from flow_matching import Path, ODEProcess, MidpointIntegrator, NaiveMidpoints
-from flow_matching.utils import push_forward_all
-from flow_matching.scheduler import OTScheduler
+from flow_matching import MultiPath, ODEProcess, MidpointIntegrator, NaiveMidpoints
+from flow_matching.scheduler import CosineMultiScheduler
 
 
 class VectorField(nn.Module):
@@ -59,8 +58,10 @@ def main():
     h_dims = 512
     epochs = 1_000
 
+    t_anchors = torch.tensor([0.0, 0.5, 1.0], dtype=torch.float32, device=device)
+
     vf = VectorField(in_d=in_dims, h_d=h_dims, t_d=1).to(device)
-    p = Path(OTScheduler())
+    p = MultiPath(CosineMultiScheduler(k=0.5))
     optim = torch.optim.AdamW(vf.parameters(), lr=1e-3)
 
     for _ in (pbar := tqdm(range(epochs))):
@@ -69,10 +70,15 @@ def main():
         # sample shit here
         x0 = xt_sampler(batch_size, x0_bounds).to(device)
         x1 = xt_sampler(batch_size, x1_bounds).to(device)
-
         x_init = torch.randn_like(x1)
 
-        loss = push_forward_all((x_init, x0, x1), (0.0, 1.0, 2.0), p, vf)
+        t = torch.rand((batch_size,), dtype=torch.float32, device=device)
+
+        ps = p.sample(torch.stack([x_init, x0, x1], dim=0), t_anchors, t)
+
+        dxt_hat = vf.forward(ps.xt, ps.t)
+
+        loss = (dxt_hat - ps.dxt).square().mean()
 
         loss.backward()
         optim.step()
@@ -81,7 +87,7 @@ def main():
 
     # integrate over time
     x_init = torch.randn((10_000, in_dims)).to(device)
-    intervals = torch.tensor([[0.0, 2.0]], dtype=x_init.dtype, device=x_init.device)
+    intervals = torch.tensor([[0.0, 1.0]], dtype=x_init.dtype, device=x_init.device)
     intervals = intervals.expand(x_init.shape[0], 2)
     steps = 10
 
@@ -126,7 +132,7 @@ def main():
         Normal(torch.zeros(2, device=device), torch.ones(2, device=device)), 1
     ).log_prob
     seeker = NaiveMidpoints(max_evals=30, iters=3)
-    interval = (0.0, 2.0)
+    interval = (0.0, 1.0)
 
     x0 = xt_sampler(samples=5, bounds=x0_bounds).to(device)
     min_t, min_p = integrator.classify(
