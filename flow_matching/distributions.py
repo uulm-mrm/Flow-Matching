@@ -38,7 +38,10 @@ class GaussianMixture:
         self.sigma = torch.tensor(sigma, device=self.device)
         self.r = torch.tensor(r, device=self.device)
 
-        self.means = self.__find_means(steps=5_000, lr=0.1, p=2)
+        if n > 1:
+            self.means = self.__find_means(steps=5_000, lr=0.1, p=2)
+        else:
+            self.means = torch.zeros((n, *shape), dtype=torch.float32, device=device)
 
     def __random_on_sphere(self) -> Tensor:
         x = torch.randn(self.n, self.dims, device=self.device)  # type: ignore

@@ -4,10 +4,10 @@ from tqdm import tqdm
 
 import torch
 from torch import nn, Tensor
-from torch.distributions import Independent, Normal
 
 from flow_matching import MultiPath, ODEProcess, MidpointIntegrator, NaiveMidpoints
 from flow_matching.scheduler import CosineMultiScheduler
+from flow_matching.distributions import GaussianMixture
 
 from examples.iris.data_utils import get_iris
 
@@ -51,6 +51,7 @@ def main():
     t_anchors = torch.tensor([0.0, 0.33, 0.66, 1.0], dtype=torch.float32, device=device)
 
     # fm stuff
+    x0_sampler = GaussianMixture(n=1, shape=(in_dims,), sigma=1.0, r=1.0, device=device)
     vf = VectorField(in_d=in_dims, h_d=h_dims, t_d=1).to(device)
     p = MultiPath(CosineMultiScheduler(k=0.33))
     optim = torch.optim.AdamW(vf.parameters(), lr=1e-3)
@@ -59,7 +60,7 @@ def main():
         optim.zero_grad()
 
         shuffle_idx = torch.randperm(batch_size)
-        x0 = torch.randn_like(x1)
+        x0 = x0_sampler.sample(batch_size)
 
         t = torch.rand((batch_size,), dtype=torch.float32, device=device)
 
@@ -83,9 +84,7 @@ def main():
     integrator = ODEProcess(vf, MidpointIntegrator())
     seeker = NaiveMidpoints(max_evals=50, iters=5)
     steps = 10
-    log_p0 = Independent(
-        Normal(torch.zeros(4, device=device), torch.ones(4, device=device)), 1
-    ).log_prob
+    log_p0 = x0_sampler.log_likelihood
     interval = (t_anchors[0], t_anchors[-1])
 
     # plot logp

@@ -7,10 +7,10 @@ from tqdm import tqdm
 
 import torch
 from torch import Tensor, nn
-from torch.distributions import Independent, Normal
 
 from flow_matching import MultiPath, ODEProcess, MidpointIntegrator, NaiveMidpoints
 from flow_matching.scheduler import CosineMultiScheduler
+from flow_matching.distributions import GaussianMixture
 
 
 class VectorField(nn.Module):
@@ -60,6 +60,8 @@ def main():
 
     t_anchors = torch.tensor([0.0, 0.5, 1.0], dtype=torch.float32, device=device)
 
+    x0_sampler = GaussianMixture(n=1, shape=(in_dims,), sigma=1.0, r=1.0, device=device)
+
     vf = VectorField(in_d=in_dims, h_d=h_dims, t_d=1).to(device)
     p = MultiPath(CosineMultiScheduler(k=0.5))
     optim = torch.optim.AdamW(vf.parameters(), lr=1e-3)
@@ -70,7 +72,7 @@ def main():
         # sample shit here
         x0 = xt_sampler(batch_size, x0_bounds).to(device)
         x1 = xt_sampler(batch_size, x1_bounds).to(device)
-        x_init = torch.randn_like(x1)
+        x_init = x0_sampler.sample(batch_size)
 
         t = torch.rand((batch_size,), dtype=torch.float32, device=device)
 
@@ -128,9 +130,7 @@ def main():
     plt.show()
 
     # classification
-    log_p0 = Independent(
-        Normal(torch.zeros(2, device=device), torch.ones(2, device=device)), 1
-    ).log_prob
+    log_p0 = x0_sampler.log_likelihood
     seeker = NaiveMidpoints(max_evals=30, iters=3)
     interval = (0.0, 1.0)
 
