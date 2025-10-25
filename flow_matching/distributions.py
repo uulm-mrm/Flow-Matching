@@ -71,7 +71,7 @@ class GaussianMixture:
             # step learn rate decay every 10th of steps
             lr = lr * 0.97 if it % (steps // 10) == 0 else lr
 
-        return means
+        return means.reshape((self.n, *self.shape))
 
     def sample(self, samples: int) -> Tensor:
         """
@@ -81,7 +81,7 @@ class GaussianMixture:
         Starts with a N(0, I) Gaussian, then for each point sampled from it,
         chooses a mean that it will be centered around
         """
-        noise = torch.randn((samples, self.dims), device=self.device)  # type: ignore
+        noise = torch.randn((samples, *self.shape), device=self.device)  # type: ignore
 
         # evenly distribute across means. safer than randint for lower sample sizes
         uniform = samples // self.n
