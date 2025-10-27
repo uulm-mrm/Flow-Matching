@@ -102,8 +102,9 @@ class GaussianMixture:
         Calculates the log likelihood of x given this Gaussian mixture
         """
         x = x.flatten(1)
+        means = self.means.flatten(1)
 
-        diffs = x[:, None] - self.means[None]
+        diffs = x[:, None] - means[None]
 
         sq_dists = (diffs**2).sum(dim=2)
 
