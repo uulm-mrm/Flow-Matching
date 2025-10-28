@@ -45,4 +45,4 @@ class TimeConditionedConv(TimeDependentModule):
         x = self.conv(x)
         x = self.film(x, t)
 
-        return F.silu(x)
+        return F.relu(x)

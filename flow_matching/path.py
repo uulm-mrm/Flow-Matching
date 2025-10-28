@@ -82,14 +82,21 @@ class MultiPath:
 
         # make this quicker or sth
         weights = self.sched.weight(t, t_anchors)  # (N, B)
+        weight_sum = weights.sum(dim=0)  # (B,)
 
         d_weights = self.sched.d_weight(t, t_anchors)  # (N, B)
+        d_weight_sum = d_weights.sum(dim=0)  # (B,)
+
+        norm_weights = weights / weight_sum  # (N, B)
+        d_norm_weights = d_weights * weight_sum - d_weight_sum * weights / (
+            weight_sum * weight_sum
+        )  # (N, B)
 
         # (N, B, ...)
-        weights = broadcast_to(weights, x_anchors)
-        d_weights = broadcast_to(d_weights, x_anchors)
+        norm_weights = broadcast_to(norm_weights, x_anchors)
+        d_norm_weights = broadcast_to(d_norm_weights, x_anchors)
 
-        xt = (weights * x_anchors).sum(dim=0)  # (B, ...)
-        dxt = (d_weights * x_anchors).sum(dim=0)  # (B, ...)
+        xt = (norm_weights * x_anchors).sum(dim=0)  # (B, ...)
+        dxt = (d_norm_weights * x_anchors).sum(dim=0)  # (B, ...)
 
         return PathSample(xt, dxt, broadcast_to(t, x_anchors[0]))
