@@ -39,7 +39,10 @@ class TimeConditionedUpConv(TimeDependentModule):
         """
 
         x = self.conv(x)
+        x = F.relu(x)
+
         x = self.pixel_shuffle(x)
+
         x = self.film(x, t)
 
-        return F.silu(x)
+        return x
