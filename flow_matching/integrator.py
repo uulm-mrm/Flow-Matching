@@ -213,7 +213,12 @@ class RungeKuttaIntegrator(Integrator):
 
 
 def main():
-    from .integrator_utils import RK4_Tableau
+    from .integrator_utils import (
+        RK4_TABLEAU,
+        RK2_TABLEAU,
+        RK4_38_TABLEAU,
+        DOPRI_TABLEAU,
+    )
 
     # always define dy/dt as f(t, y)
     f = lambda t, x: [t, 2 * t]
@@ -223,20 +228,35 @@ def main():
     tint = torch.tensor([[0.0, 1.0]])
     tint = tint.expand(batch_size, 2)
 
-    # ei = EulerIntegrator()
-    # t, x = ei.integrate(f, x0, tint, steps=4)
-    # x1, x2 = x
-    # print(t[-1], x1[-1], x2[-1])
-
-    # mi = MidpointIntegrator()
-    # t, x = mi.integrate(f, x0, tint, steps=10)
-    # x1, x2 = x
-    # print(x1[-1], x2[-1])
-
-    rk = RungeKuttaIntegrator(RK4_Tableau, device="cpu")
-    t, x = rk.integrate(f, x0, tint, steps=10)
+    ei = EulerIntegrator()
+    _, x = ei.integrate(f, [torch.clone(_x0) for _x0 in x0], tint, steps=4)
     x1, x2 = x
-    print(t, x1, x2)
+    print(x1[-1], x2[-1])
+
+    mi = MidpointIntegrator()
+    _, x = mi.integrate(f, [torch.clone(_x0) for _x0 in x0], tint, steps=10)
+    x1, x2 = x
+    print(x1[-1], x2[-1])
+
+    rk4 = RungeKuttaIntegrator(RK4_TABLEAU, device="cpu")
+    _, x = rk4.integrate(f, [torch.clone(_x0) for _x0 in x0], tint, steps=10)
+    x1, x2 = x
+    print(x1[-1], x2[-1])
+
+    rk2 = RungeKuttaIntegrator(RK2_TABLEAU, device="cpu")
+    _, x = rk2.integrate(f, [torch.clone(_x0) for _x0 in x0], tint, steps=10)
+    x1, x2 = x
+    print(x1[-1], x2[-1])
+
+    rk4_38 = RungeKuttaIntegrator(RK4_38_TABLEAU, device="cpu")
+    _, x = rk4_38.integrate(f, [torch.clone(_x0) for _x0 in x0], tint, steps=10)
+    x1, x2 = x
+    print(x1[-1], x2[-1])
+
+    dp5 = RungeKuttaIntegrator(RK4_38_TABLEAU, device="cpu")
+    _, x = dp5.integrate(f, [torch.clone(_x0) for _x0 in x0], tint, steps=10)
+    x1, x2 = x
+    print(x1[-1], x2[-1])
 
 
 if __name__ == "__main__":
