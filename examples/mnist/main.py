@@ -6,7 +6,7 @@ import torch
 from torch import Tensor
 from torch.utils.data import DataLoader
 
-from flow_matching import Path, ODEProcess, MidpointIntegrator
+from flow_matching import Path, ODEProcess, RungeKuttaIntegrator, tableaus
 from flow_matching.scheduler import OTScheduler
 from flow_matching.distributions import GaussianMixture
 
@@ -98,7 +98,9 @@ def main():
     intervals = intervals.expand(x0.shape[0], 2)
     steps = 10
 
-    integrator = ODEProcess(vf, MidpointIntegrator())
+    integrator = ODEProcess(
+        vf, RungeKuttaIntegrator(tableaus.RK4_38_TABLEAU, device=device)
+    )
     _, x_traj = integrator.sample(x0, intervals, steps=steps)
     fake_imgs = x_traj[-1]  # take the samples at t=1
 

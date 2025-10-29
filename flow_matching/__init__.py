@@ -1,4 +1,4 @@
-from .integrator import EulerIntegrator, MidpointIntegrator
+from .integrator import EulerIntegrator, MidpointIntegrator, RungeKuttaIntegrator
 from .process import ODEProcess
 from .path import Path, MultiPath
 from .seeker import GoldenSectionSeeker, NaiveMidpoints

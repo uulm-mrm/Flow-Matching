@@ -6,7 +6,13 @@ import torch
 from torch import nn, Tensor
 from torch.distributions import Normal, Independent
 
-from flow_matching import MultiPath, ODEProcess, MidpointIntegrator, NaiveMidpoints
+from flow_matching import (
+    MultiPath,
+    ODEProcess,
+    RungeKuttaIntegrator,
+    NaiveMidpoints,
+    tableaus,
+)
 from flow_matching.scheduler import CosineMultiScheduler
 
 from examples.iris.data_utils import get_iris
@@ -81,9 +87,11 @@ def main():
 
     # postprocessing
     vf.eval()
-    integrator = ODEProcess(vf, MidpointIntegrator())
+    integrator = ODEProcess(
+        vf, RungeKuttaIntegrator(tableaus.RK4_38_TABLEAU, device=device)
+    )
     seeker = NaiveMidpoints(max_evals=50, iters=5)
-    steps = 100
+    steps = 20
     log_p0 = Independent(
         Normal(torch.zeros(in_dims, device=device), torch.ones(in_dims, device=device)),
         reinterpreted_batch_ndims=1,
