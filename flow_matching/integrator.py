@@ -253,7 +253,7 @@ def main():
     x1, x2 = x
     print(x1[-1], x2[-1])
 
-    dp5 = RungeKuttaIntegrator(RK4_38_TABLEAU, device="cpu")
+    dp5 = RungeKuttaIntegrator(DOPRI_TABLEAU, device="cpu")
     _, x = dp5.integrate(f, [torch.clone(_x0) for _x0 in x0], tint, steps=10)
     x1, x2 = x
     print(x1[-1], x2[-1])
