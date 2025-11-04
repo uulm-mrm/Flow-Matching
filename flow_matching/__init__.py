@@ -1,6 +1,6 @@
 from .integrator import EulerIntegrator, MidpointIntegrator, RungeKuttaIntegrator
 from .process import ODEProcess
-from .path import Path, MultiPath
+from .path import Path, AnchoredPath
 from .seeker import GoldenSectionSeeker, NaiveMidpoints
 from . import scheduler
 from . import distributions

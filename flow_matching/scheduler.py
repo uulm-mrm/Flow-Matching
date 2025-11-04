@@ -16,7 +16,7 @@ class Scheduler:
         raise NotImplementedError
 
 
-class MultiScheduler:
+class AnchorScheduler:
     def weight(self, t: Tensor, t_anc: Tensor) -> Tensor:
         """Weight tensor, equivalent to alpha/sigma
 
@@ -75,7 +75,7 @@ class PolyScheduler(Scheduler):
         return -self.n * torch.pow(t, self.n - 1)
 
 
-class CosineMultiScheduler(MultiScheduler):
+class CosineMultiScheduler(AnchorScheduler):
     """Schedules the path with the following w_i
 
     w_i(t) = 1/2 * (1 + cos(pi/k * (t-ti)))

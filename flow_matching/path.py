@@ -2,7 +2,7 @@ from dataclasses import dataclass, field
 
 from torch import Tensor
 
-from .scheduler import Scheduler, MultiScheduler
+from .scheduler import Scheduler, AnchorScheduler
 
 
 def broadcast_to(x: Tensor, y: Tensor) -> Tensor:
@@ -59,13 +59,13 @@ class Path:
         return PathSample(xt, dxt, t)
 
 
-class MultiPath:
+class AnchoredPath:
     """
     Samples the probability path at different times for the vector field,
     For an arbitrary number of target densities
     """
 
-    def __init__(self, sched: MultiScheduler) -> None:
+    def __init__(self, sched: AnchorScheduler) -> None:
         self.sched = sched
 
     def sample(self, x_anchors: Tensor, t_anchors: Tensor, t: Tensor) -> PathSample:

@@ -7,7 +7,7 @@ from torch import nn, Tensor
 from torch.distributions import Normal, Independent
 
 from flow_matching import (
-    MultiPath,
+    AnchoredPath,
     ODEProcess,
     RungeKuttaIntegrator,
     NaiveMidpoints,
@@ -59,7 +59,7 @@ def main():
 
     # fm stuff
     vf = VectorField(in_d=in_dims, h_d=h_dims, t_d=1).to(device)
-    p = MultiPath(CosineMultiScheduler(k=k))
+    p = AnchoredPath(CosineMultiScheduler(k=k))
     optim = torch.optim.AdamW(vf.parameters(), lr=1e-3)
 
     for _ in (pbar := tqdm(range(epochs))):

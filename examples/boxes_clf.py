@@ -8,7 +8,7 @@ from tqdm import tqdm
 import torch
 from torch import Tensor, nn
 
-from flow_matching import MultiPath, ODEProcess, MidpointIntegrator, NaiveMidpoints
+from flow_matching import AnchoredPath, ODEProcess, MidpointIntegrator, NaiveMidpoints
 from flow_matching.scheduler import CosineMultiScheduler
 from flow_matching.distributions import GaussianMixture
 
@@ -63,7 +63,7 @@ def main():
     x0_sampler = GaussianMixture(n=1, shape=(in_dims,), sigma=1.0, r=1.0, device=device)
 
     vf = VectorField(in_d=in_dims, h_d=h_dims, t_d=1).to(device)
-    p = MultiPath(CosineMultiScheduler(k=0.5))
+    p = AnchoredPath(CosineMultiScheduler(k=0.5))
     optim = torch.optim.AdamW(vf.parameters(), lr=1e-3)
 
     for _ in (pbar := tqdm(range(epochs))):
