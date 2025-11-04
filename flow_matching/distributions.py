@@ -1,7 +1,51 @@
+import math
+
 from tqdm import tqdm
 
 import torch
 from torch import Tensor
+
+from torch.distributions import Normal, Independent, Distribution
+
+
+def equidistant_on_sphere(
+    n: int,
+    shape: tuple[int, ...],
+    r: float,
+    steps: int = 5000,
+    lr: float = 1e-3,
+    p: int = 2,
+    device: str = "cpu",
+) -> Tensor:
+    """Returns n points on a sphere equidistant one from another"""
+    dims = math.prod(shape)
+
+    # random init (n, dims)
+    x = torch.randn(n, dims, device=device, dtype=torch.float32, requires_grad=True)  # type: ignore
+
+    with torch.no_grad():
+        x.data = r * x.data / x.data.norm(p=2.0, dim=-1, keepdim=True)
+
+    optim = torch.optim.Adam([x], lr=lr)
+    eps = 1e-6
+
+    for _ in tqdm(range(steps), desc="Finding Equidistant Points"):
+        optim.zero_grad()
+
+        dists = torch.cdist(x, x, p=2)  # (n, n)
+        dists = dists + torch.eye(dists.shape[0]) * 1e9
+
+        inv_dists = dists ** (-p)
+
+        energy = 0.5 * inv_dists.sum()
+
+        energy.backward()
+        optim.step()
+
+        with torch.no_grad():
+            x.data = r * x.data / x.data.norm(dim=-1, keepdim=True).clamp_min(eps)
+
+    return x.detach().reshape((n, *shape)).float()
 
 
 class GaussianMixture:
@@ -39,39 +83,11 @@ class GaussianMixture:
         self.r = torch.tensor(r, device=self.device)
 
         if n > 1:
-            self.means = self.__find_means(steps=5_000, lr=0.1, p=2)
+            self.means = equidistant_on_sphere(
+                n, shape, r, steps=5_000, lr=1e-3, p=2, device=device
+            )
         else:
             self.means = torch.zeros((n, *shape), dtype=torch.float32, device=device)
-
-    def __random_on_sphere(self) -> Tensor:
-        x = torch.randn(self.n, self.dims, device=self.device)  # type: ignore
-
-        return self.r * x / x.norm(dim=1, keepdim=True)
-
-    def __find_means(self, steps: int, lr: float, p: int = 2) -> Tensor:
-        means = self.__random_on_sphere()  # (n, dims)
-
-        for it in tqdm(range(steps), desc="Finding Gaussian Mixture Centers"):
-            # calculate m_i - m_j for all m in means
-            diffs = means[:, None] - means[None]  # (n, n, dims)
-            dists = diffs.norm(dim=2) + 1e-12  # (n, n)
-
-            inv_dists = 1.0 / (dists ** (p + 1))  # (n, n)
-            inv_dists.fill_diagonal_(0.0)  # anull self dist
-
-            # calculate force for each m in means
-            repulsion = (inv_dists[..., None] * diffs).sum(dim=1)  # (n, dims)
-
-            # update means
-            means = means + lr * repulsion
-
-            # reproject means
-            means = self.r * means / means.norm(dim=1, keepdim=True)
-
-            # step learn rate decay every 10th of steps
-            lr = lr * 0.97 if it % (steps // 10) == 0 else lr
-
-        return means.reshape((self.n, *self.shape))
 
     def sample(self, samples: int) -> Tensor:
         """
@@ -114,3 +130,37 @@ class GaussianMixture:
 
         # log( (1/n) * sum_i exp(log_probs_i) )
         return torch.logsumexp(log_probs, dim=1) - torch.log(self.n)
+
+
+class MultiIndependentNormal:
+    def __init__(
+        self, c: int, shape: tuple[int, ...], r: float, sigma: float, device: str
+    ) -> None:
+        self.c = c
+
+        self.shape = shape
+        self.dims = torch.prod(torch.tensor(shape))
+
+        self.r = r
+        self.sigma = sigma
+        self.device = device
+
+        # (c, shape)
+        self.means = equidistant_on_sphere(
+            c, shape, r, steps=10_000, lr=1e-1, p=2, device=device
+        )
+
+        # c independent normals
+        self.distros = self.__make_distros()
+
+    def __make_distros(self) -> tuple[Distribution]:
+        return tuple(
+            Independent(
+                Normal(
+                    loc=mean,
+                    scale=self.sigma * torch.ones_like(mean, device=self.device),
+                ),
+                reinterpreted_batch_ndims=len(self.shape),
+            )
+            for mean in self.means
+        )  # type: ignore
