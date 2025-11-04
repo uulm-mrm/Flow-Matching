@@ -9,7 +9,7 @@ import matplotlib.pyplot as plt
 
 from sklearn.datasets import make_moons
 
-from flow_matching import Path, ODEProcess, MidpointIntegrator
+from flow_matching import AffinePath, ODEProcess, MidpointIntegrator
 from flow_matching.scheduler import OTScheduler
 
 DEVICE = "cuda:0"
@@ -77,7 +77,7 @@ def main():
     epochs = 1_000
 
     vf = VectorField(in_dims=in_dims, h_dims=h_dims, t_dims=1).to(DEVICE)
-    p = Path(OTScheduler())
+    p = AffinePath(OTScheduler())
     optim = torch.optim.AdamW(vf.parameters(), lr=1e-3)
 
     for _ in (pbar := tqdm(range(epochs))):

@@ -1,14 +1,14 @@
 import torch
 from torch import nn, Tensor
 
-from .path import Path
+from .path import AffinePath
 
 
 def push_forward(
     x0: Tensor,
     x1: Tensor,
     t_int: tuple[float, float],
-    path: Path,
+    path: AffinePath,
     vf: nn.Module,
     **vf_extras
 ) -> Tensor:
@@ -32,7 +32,7 @@ def push_forward(
 def push_forward_all(
     anc_x: tuple[Tensor, ...],
     anc_t: tuple[float, ...],
-    path: Path,
+    path: AffinePath,
     vf: nn.Module,
     **vf_extras
 ) -> Tensor:

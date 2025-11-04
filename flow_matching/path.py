@@ -2,7 +2,7 @@ from dataclasses import dataclass, field
 
 from torch import Tensor
 
-from .scheduler import Scheduler, AnchorScheduler
+from .scheduler import AffineScheduler, AnchorScheduler
 
 
 def broadcast_to(x: Tensor, y: Tensor) -> Tensor:
@@ -34,10 +34,10 @@ class PathSample:
     t: Tensor = field(metadata={"help": "t broadcast to xt dimensions"})
 
 
-class Path:
+class AffinePath:
     """Samples the probability path at different times for the vector field"""
 
-    def __init__(self, sched: Scheduler) -> None:
+    def __init__(self, sched: AffineScheduler) -> None:
         self.sched = sched
 
     def sample(self, x0: Tensor, x1: Tensor, t: Tensor) -> PathSample:
@@ -100,3 +100,25 @@ class AnchoredPath:
         dxt = (d_norm_weights * x_anchors).sum(dim=0)  # (B, ...)
 
         return PathSample(xt, dxt, broadcast_to(t, x_anchors[0]))
+
+
+class MultiPath:
+    """Makes n Paths of the same kind and calculates the probability paths independently for them"""
+
+    def __init__(
+        self,
+        base_path: AffinePath,
+        num_paths: int,
+    ) -> None:
+        self.base_path = base_path
+        self.num_paths = num_paths
+
+    def sample(self, x0: Tensor, x1: Tensor, t: Tensor) -> PathSample:
+        t = broadcast_to(t, x0[0])
+        t = t.repeat(x0.shape[0], *[1] * len(t.shape))
+        xt = self.base_path.sched.alpha(t) * x1 + self.base_path.sched.sigma(t) * x0
+        dxt = (
+            self.base_path.sched.d_alpha(t) * x1 + self.base_path.sched.d_sigma(t) * x0
+        )
+
+        return PathSample(xt.flatten(0, 1), dxt.flatten(0, 1), t.flatten(0, 1))

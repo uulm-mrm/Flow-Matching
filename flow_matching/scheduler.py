@@ -2,7 +2,7 @@ import torch
 from torch import Tensor
 
 
-class Scheduler:
+class AffineScheduler:
     def alpha(self, t: Tensor) -> Tensor:
         raise NotImplementedError
 
@@ -42,7 +42,7 @@ class AnchorScheduler:
         raise NotImplementedError
 
 
-class OTScheduler(Scheduler):
+class OTScheduler(AffineScheduler):
     def alpha(self, t: Tensor) -> Tensor:
         return t
 
@@ -56,7 +56,7 @@ class OTScheduler(Scheduler):
         return -torch.ones_like(t)
 
 
-class PolyScheduler(Scheduler):
+class PolyScheduler(AffineScheduler):
     def __init__(self, n: float) -> None:
         super().__init__()
 
@@ -75,7 +75,7 @@ class PolyScheduler(Scheduler):
         return -self.n * torch.pow(t, self.n - 1)
 
 
-class CosineMultiScheduler(AnchorScheduler):
+class CosineScheduler(AnchorScheduler):
     """Schedules the path with the following w_i
 
     w_i(t) = 1/2 * (1 + cos(pi/k * (t-ti)))

@@ -12,7 +12,7 @@ from matplotlib import cm
 from sklearn.datasets import make_moons
 
 from flow_matching import AnchoredPath, ODEProcess, MidpointIntegrator
-from flow_matching.scheduler import CosineMultiScheduler
+from flow_matching.scheduler import CosineScheduler
 
 DEVICE = "cuda:0"
 
@@ -71,7 +71,7 @@ def main():
     t_anchors = torch.tensor([0.0, 1.0], dtype=torch.float32, device=DEVICE)
 
     vf = VectorField(in_dims=in_dims, h_dims=h_dims, t_dims=1).to(DEVICE)
-    p = AnchoredPath(CosineMultiScheduler(k=1.0))
+    p = AnchoredPath(CosineScheduler(k=1.0))
     optim = torch.optim.AdamW(vf.parameters(), lr=1e-3)
 
     for _ in (pbar := tqdm(range(epochs))):

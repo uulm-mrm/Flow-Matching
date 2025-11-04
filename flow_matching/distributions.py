@@ -21,7 +21,7 @@ def equidistant_on_sphere(
     dims = math.prod(shape)
 
     # random init (n, dims)
-    x = torch.randn(n, dims, device=device, dtype=torch.float32, requires_grad=True)  # type: ignore
+    x = torch.randn(n, dims, dtype=torch.float32, requires_grad=True)  # type: ignore
 
     with torch.no_grad():
         x.data = r * x.data / x.data.norm(p=2.0, dim=-1, keepdim=True)
@@ -29,11 +29,13 @@ def equidistant_on_sphere(
     optim = torch.optim.Adam([x], lr=lr)
     eps = 1e-6
 
+    anull = torch.eye(n, dtype=torch.float32) * 1e9
+
     for _ in tqdm(range(steps), desc="Finding Equidistant Points"):
         optim.zero_grad()
 
         dists = torch.cdist(x, x, p=2)  # (n, n)
-        dists = dists + torch.eye(dists.shape[0]) * 1e9
+        dists = dists + anull
 
         inv_dists = dists ** (-p)
 
@@ -45,7 +47,7 @@ def equidistant_on_sphere(
         with torch.no_grad():
             x.data = r * x.data / x.data.norm(dim=-1, keepdim=True).clamp_min(eps)
 
-    return x.detach().reshape((n, *shape)).float()
+    return x.detach().reshape((n, *shape)).float().to(device)
 
 
 class GaussianMixture:
@@ -164,3 +166,17 @@ class MultiIndependentNormal:
             )
             for mean in self.means
         )  # type: ignore
+
+    def sample(self, n: int) -> Tensor:
+        """Samples n points from each Gaussian for a total of (c, n, D...) points"""
+        return torch.stack([d.sample((n,)) for d in self.distros], dim=0)
+
+    def log_likelihood(self, x: Tensor) -> Tensor:
+        """Calculates the log likelihood of x w.r.t all gaussians returning (n, c)"""
+        return torch.stack([d.log_prob(x) for d in self.distros], dim=1)
+
+
+if __name__ == "__main__":
+    mn = MultiIndependentNormal(2, (2,), r=1.0, sigma=0.5, device="cuda:0")
+    print(mn.sample(10).shape)
+    print(mn.log_likelihood(torch.rand((5, 2), device="cuda:0")))

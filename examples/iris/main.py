@@ -1,19 +1,17 @@
-import matplotlib.pyplot as plt
-
 from tqdm import tqdm
 
 import torch
 from torch import nn, Tensor
-from torch.distributions import Normal, Independent
 
 from flow_matching import (
-    AnchoredPath,
+    MultiPath,
+    AffinePath,
     ODEProcess,
     RungeKuttaIntegrator,
-    NaiveMidpoints,
     tableaus,
 )
-from flow_matching.scheduler import CosineMultiScheduler
+from flow_matching.scheduler import OTScheduler
+from flow_matching.distributions import MultiIndependentNormal
 
 from examples.iris.data_utils import get_iris
 
@@ -47,6 +45,7 @@ def main():
     # consts
     device = "cuda:0"
 
+    num_class = 3
     in_dims = 4
     h_dims = 256
     epochs = 1_000
@@ -54,90 +53,47 @@ def main():
 
     # dataset
     x1, x2, x3 = get_iris(device=device)
-    t_anchors = torch.tensor([0.0, 0.33, 0.66, 1.0], dtype=torch.float32, device=device)
-    k = 0.33
+    x = torch.stack([x1, x2, x3], dim=0)
+
+    # x0 sampler
+    multi_normal = MultiIndependentNormal(
+        c=num_class, shape=(in_dims,), r=2.0, sigma=0.5, device=device
+    )
+    print(multi_normal.means)
 
     # fm stuff
-    vf = VectorField(in_d=in_dims, h_d=h_dims, t_d=1).to(device)
-    p = AnchoredPath(CosineMultiScheduler(k=k))
+    vf = VectorField(in_dims, h_dims, t_d=1).to(device)
+    path = MultiPath(AffinePath(OTScheduler()), num_paths=num_class)
     optim = torch.optim.AdamW(vf.parameters(), lr=1e-3)
 
     for _ in (pbar := tqdm(range(epochs))):
         optim.zero_grad()
 
-        shuffle_idx = torch.randperm(batch_size)
-        x0 = torch.randn_like(x1)
-
+        x0 = multi_normal.sample(batch_size)
         t = torch.rand((batch_size,), dtype=torch.float32, device=device)
 
-        ps = p.sample(
-            torch.stack([x0, x1[shuffle_idx], x2[shuffle_idx], x3[shuffle_idx]], dim=0),
-            t_anchors,
-            t,
-        )
+        path_sample = path.sample(x0, x, t)
+        dxt_hat = vf.forward(path_sample.xt, path_sample.t)
 
-        dxt_hat = vf.forward(ps.xt, ps.t)
-
-        loss = (dxt_hat - ps.dxt).square().mean()
+        loss = (dxt_hat - path_sample.dxt).square().mean()
 
         loss.backward()
         optim.step()
 
         pbar.set_description(f"Loss: {loss.item():.3f}")
 
-    # postprocessing
-    vf.eval()
-    integrator = ODEProcess(
-        vf, RungeKuttaIntegrator(tableaus.RK4_38_TABLEAU, device=device)
+    vf = vf.eval()
+
+    proc = ODEProcess(vf, RungeKuttaIntegrator(tableaus.RK4_TABLEAU, device=device))
+    x_init = x1
+    intervals = torch.tensor([[1.0, 0.0]], dtype=torch.float32, device=device).expand(
+        x_init.shape[0], 2
     )
-    seeker = NaiveMidpoints(max_evals=50, iters=5)
-    steps = 20
-    log_p0 = Independent(
-        Normal(torch.zeros(in_dims, device=device), torch.ones(in_dims, device=device)),
-        reinterpreted_batch_ndims=1,
-    ).log_prob
-    interval = (t_anchors[0], t_anchors[-1])
 
-    # plot logp
-    for x in (x1, x2, x3):
-        t_steps = 50
-        batch_size = 50
-        t = torch.linspace(0.0, t_anchors[-1], steps=t_steps, device=device).repeat(
-            batch_size
-        )
-        intervals = torch.zeros(
-            (t_steps * batch_size, 2), dtype=torch.float32, device=device
-        )
-        intervals[:, 0] = t
-
-        x = x.repeat_interleave(t_steps, dim=0)
-        _, probs = integrator.compute_likelihood(
-            x, intervals, log_p0, steps=steps, est_steps=5
-        )
-
-        intervals = intervals.chunk(50)
-        probs = probs.chunk(50)
-
-        plt.gca().invert_xaxis()
-        for prob, interval in zip(probs, intervals):
-            plt.plot(interval[:, 0].cpu().numpy(), torch.exp(prob).cpu().numpy())
-        plt.show()
-
-    # classify
-    x = torch.cat(
-        [x1[:5], x2[:5], x3[:5], torch.rand((5, 4), device=device) - 3], dim=0
-    )
-    min_t, prob = integrator.classify(
-        seeker,
-        x,
-        log_p0,
-        (t_anchors[0].item(), t_anchors[-1].item()),
-        steps=steps,
-        est_steps=5,
-        eps=1e-8,
-    )
-    print(f"t_pred:\n{min_t}")
-    print(f"prob:\n{prob}")
+    _, x_traj = proc.sample(x1, intervals, steps=100)
+    sols = x_traj[-1]
+    probs = multi_normal.log_likelihood(sols)
+    print(probs.argmax(dim=1))
 
 
 if __name__ == "__main__":

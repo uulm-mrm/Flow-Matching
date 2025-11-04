@@ -6,7 +6,7 @@ import torch
 from torch import Tensor
 from torch.utils.data import DataLoader
 
-from flow_matching import Path, ODEProcess, RungeKuttaIntegrator, tableaus
+from flow_matching import AffinePath, ODEProcess, RungeKuttaIntegrator, tableaus
 from flow_matching.scheduler import OTScheduler
 from flow_matching.distributions import GaussianMixture
 
@@ -45,7 +45,7 @@ def main():
     vf = CNNVF(t_dims=t_dims).to(device)
     ema = EMA(vf, rate=0.999).to(device)
 
-    path = Path(OTScheduler())
+    path = AffinePath(OTScheduler())
     optim = torch.optim.AdamW(vf.parameters(), lr=lr)
 
     # train the vf
