@@ -59,7 +59,6 @@ def main():
     multi_normal = MultiIndependentNormal(
         c=num_class, shape=(in_dims,), r=2.0, sigma=0.5, device=device
     )
-    print(multi_normal.means)
 
     # fm stuff
     vf = VectorField(in_dims, h_dims, t_d=1).to(device)
@@ -85,15 +84,15 @@ def main():
     vf = vf.eval()
 
     proc = ODEProcess(vf, RungeKuttaIntegrator(tableaus.RK4_TABLEAU, device=device))
-    x_init = x1
+    x_init = torch.cat([x1, x2, x3], dim=0)
     intervals = torch.tensor([[1.0, 0.0]], dtype=torch.float32, device=device).expand(
         x_init.shape[0], 2
     )
 
-    _, x_traj = proc.sample(x1, intervals, steps=100)
+    _, x_traj = proc.sample(x_init, intervals, steps=100)
     sols = x_traj[-1]
     probs = multi_normal.log_likelihood(sols)
-    print(probs.argmax(dim=1))
+    print(probs.argmax(dim=1).chunk(3))
 
 
 if __name__ == "__main__":
