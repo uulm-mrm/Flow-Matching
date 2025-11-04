@@ -75,14 +75,6 @@ class PolyScheduler(Scheduler):
         return -self.n * torch.pow(t, self.n - 1)
 
 
-class SigmoidMultiScheduler(MultiScheduler):
-    def weight(self, t: Tensor, t_anc: Tensor) -> Tensor:
-        return super().weight(t, t_anc)
-
-    def d_weight(self, t: Tensor, t_anc: Tensor) -> Tensor:
-        return super().d_weight(t, t_anc)
-
-
 class CosineMultiScheduler(MultiScheduler):
     """Schedules the path with the following w_i
 
