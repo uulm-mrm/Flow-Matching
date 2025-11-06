@@ -51,14 +51,17 @@ def main():
     epochs = 1_000
     batch_size = 50
 
-    # dataset
-    x1, x2, x3 = get_iris(device=device)
-    x = torch.stack([x1, x2, x3], dim=0)
+    sigma = 0.5
+    r = 3.0
 
     # x0 sampler
     multi_normal = MultiIndependentNormal(
-        c=num_class, shape=(in_dims,), r=1.0, sigma=0.1, device=device
+        c=num_class, shape=(in_dims,), r=r, sigma=sigma, device=device
     )
+
+    # dataset
+    x1, x2, x3 = get_iris(device=device)
+    x = torch.stack([x1, x2, x3], dim=0)
 
     # fm stuff
     vf = VectorField(in_dims, h_dims, t_d=1).to(device)

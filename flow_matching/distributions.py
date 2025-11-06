@@ -5,8 +5,6 @@ from tqdm import tqdm
 import torch
 from torch import Tensor
 
-from torch.distributions import Normal, Independent, Distribution
-
 
 def equidistant_on_sphere(
     n: int,
@@ -141,7 +139,7 @@ class MultiIndependentNormal:
         self.c = c
 
         self.shape = shape
-        self.dims = torch.prod(torch.tensor(shape))
+        self.dims = math.prod(shape)
 
         self.r = r
         self.sigma = sigma
@@ -152,31 +150,24 @@ class MultiIndependentNormal:
             c, shape, r, steps=10_000, lr=1e-1, p=2, device=device
         )
 
-        # c independent normals
-        self.distros = self.__make_distros()
+        self.__inv_var = sigma ** (-2)
 
-    def __make_distros(self) -> tuple[Distribution]:
-        return tuple(
-            Independent(
-                Normal(
-                    loc=mean,
-                    scale=self.sigma * torch.ones_like(mean, device=self.device),
-                ),
-                reinterpreted_batch_ndims=len(self.shape),
-            )
-            for mean in self.means
-        )  # type: ignore
+        self.__log_sigma = self.dims * math.log(self.sigma)
+        self.__log_2pi = 0.5 * self.dims * math.log(2 * math.pi)
 
     def sample(self, n: int) -> Tensor:
         """Samples n points from each Gaussian for a total of (c, n, D...) points"""
-        return torch.stack([d.sample((n,)) for d in self.distros], dim=0)
+        base = torch.randn(
+            size=(n, *self.shape), dtype=self.means.dtype, device=self.means.device
+        )
+
+        return base.unsqueeze(0) * self.sigma + self.means.unsqueeze(1)
 
     def log_likelihood(self, x: Tensor) -> Tensor:
         """Calculates the log likelihood of x w.r.t all gaussians returning (n, c)"""
-        return torch.stack([d.log_prob(x) for d in self.distros], dim=1)
+        diffs = x.unsqueeze(1) - self.means.unsqueeze(0)  # (n, c, D...)
+        diffs_sq = diffs.square().flatten(2).sum(dim=2)  # (n, c)
 
+        log_exp = 0.5 * diffs_sq * self.__inv_var
 
-if __name__ == "__main__":
-    mn = MultiIndependentNormal(2, (2,), r=1.0, sigma=0.5, device="cuda:0")
-    print(mn.sample(10).shape)
-    print(mn.log_likelihood(torch.rand((5, 2), device="cuda:0")))
+        return -self.__log_2pi - self.__log_sigma - log_exp

@@ -10,10 +10,6 @@ def get_iris(device: str) -> tuple[Tensor, Tensor, Tensor]:
     x = torch.from_numpy(x)
     x = x.float().to(device)
 
-    xmin = x.min(dim=0, keepdim=True)[0]
-    xmax = x.max(dim=0, keepdim=True)[0]
-    x = (x - xmin) / (xmax - xmin) * 2 - 1
-
     y = torch.from_numpy(y).to(device)
 
     return x[y == 0], x[y == 1], x[y == 2]
