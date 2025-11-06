@@ -4,13 +4,13 @@ import torch
 from torch import nn, Tensor
 
 from flow_matching import (
-    MultiPath,
+    AffineMultiPath,
     AffinePath,
     ODEProcess,
     RungeKuttaIntegrator,
     tableaus,
 )
-from flow_matching.scheduler import OTScheduler
+from flow_matching.scheduler import CosineScheduler
 from flow_matching.distributions import MultiIndependentNormal
 
 from examples.iris.data_utils import get_iris
@@ -47,7 +47,7 @@ def main():
 
     num_class = 3
     in_dims = 4
-    h_dims = 256
+    h_dims = 512
     epochs = 1_000
     batch_size = 50
 
@@ -57,12 +57,12 @@ def main():
 
     # x0 sampler
     multi_normal = MultiIndependentNormal(
-        c=num_class, shape=(in_dims,), r=2.0, sigma=0.5, device=device
+        c=num_class, shape=(in_dims,), r=1.0, sigma=0.1, device=device
     )
 
     # fm stuff
     vf = VectorField(in_dims, h_dims, t_d=1).to(device)
-    path = MultiPath(AffinePath(OTScheduler()), num_paths=num_class)
+    path = AffineMultiPath(AffinePath(CosineScheduler()), num_paths=num_class)
     optim = torch.optim.AdamW(vf.parameters(), lr=1e-3)
 
     for _ in (pbar := tqdm(range(epochs))):
@@ -84,7 +84,7 @@ def main():
     vf = vf.eval()
 
     proc = ODEProcess(vf, RungeKuttaIntegrator(tableaus.RK4_TABLEAU, device=device))
-    x_init = torch.cat([x1, x2, x3], dim=0)
+    x_init = torch.cat([x1, x2, x3, torch.rand_like(x1)], dim=0)
     intervals = torch.tensor([[1.0, 0.0]], dtype=torch.float32, device=device).expand(
         x_init.shape[0], 2
     )
@@ -92,7 +92,8 @@ def main():
     _, x_traj = proc.sample(x_init, intervals, steps=100)
     sols = x_traj[-1]
     probs = multi_normal.log_likelihood(sols)
-    print(probs.argmax(dim=1).chunk(3))
+    print(probs.chunk(4))
+    print(probs.argmax(dim=1).chunk(4))
 
 
 if __name__ == "__main__":

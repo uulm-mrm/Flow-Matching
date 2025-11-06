@@ -75,7 +75,39 @@ class PolyScheduler(AffineScheduler):
         return -self.n * torch.pow(t, self.n - 1)
 
 
-class CosineScheduler(AnchorScheduler):
+class CosineScheduler(AffineScheduler):
+    """
+    w = 1/2 * (1 + cos(pi/k * (t-t_i)))
+    dw = -1/2 * pi/k * sin(pi/k * (t-t_i))
+
+    (d)alpha = (d)w(t, 1.0, k=1.0)
+    (d)sigma = (d)w(t, 0.0, k=1.0)
+    """
+
+    def __interpolant(self, t: Tensor, anchor: float, k: float) -> Tensor:
+        diff = t - anchor
+        w = 0.5 * (1 + torch.cos(torch.pi / k * diff))
+        return torch.where(diff.abs() <= k, w, 0.0)
+
+    def __d_interpolant(self, t: Tensor, anchor: float, k: float) -> Tensor:
+        diff = t - anchor
+        dw = -0.5 * torch.pi / k * torch.sin(torch.pi / k * diff)
+        return torch.where(diff.abs() <= k, dw, 0.0)
+
+    def sigma(self, t: Tensor) -> Tensor:
+        return self.__interpolant(t, 0.0, k=1.0)
+
+    def alpha(self, t: Tensor) -> Tensor:
+        return self.__interpolant(t, 1.0, k=1.0)
+
+    def d_sigma(self, t: Tensor) -> Tensor:
+        return self.__d_interpolant(t, 0.0, k=1.0)
+
+    def d_alpha(self, t: Tensor) -> Tensor:
+        return self.__d_interpolant(t, 1.0, k=1.0)
+
+
+class CosineAnchorScheduler(AnchorScheduler):
     """Schedules the path with the following w_i
 
     w_i(t) = 1/2 * (1 + cos(pi/k * (t-ti)))
@@ -102,3 +134,17 @@ class CosineScheduler(AnchorScheduler):
         dw = -0.5 * torch.pi / self.k * torch.sin(torch.pi * delta_t / self.k)  # (N, B)
 
         return torch.where(delta_t.abs() <= self.k, dw, 0.0)
+
+
+def main():
+    cs = CosineScheduler()
+    cas = CosineAnchorScheduler(k=1.0)
+
+    t = torch.linspace(0, 1, 11, dtype=torch.float32)
+
+    print(cs.sigma(t), cs.alpha(t))
+    print(cas.weight(t, torch.tensor([0.0, 1.0])))
+
+
+if __name__ == "__main__":
+    main()
