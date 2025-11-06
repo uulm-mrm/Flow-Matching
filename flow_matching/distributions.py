@@ -146,8 +146,12 @@ class MultiIndependentNormal:
         self.device = device
 
         # (c, shape)
-        self.means = equidistant_on_sphere(
-            c, shape, r, steps=10_000, lr=1e-1, p=2, device=device
+        self.means = (
+            equidistant_on_sphere(
+                c, shape, r, steps=10_000, lr=1e-1, p=2, device=device
+            )
+            if c > 1
+            else torch.zeros((1, *self.shape), dtype=torch.float32, device=device)
         )
 
         self.__inv_var = sigma ** (-2)
