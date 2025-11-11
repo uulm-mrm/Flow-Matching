@@ -15,14 +15,19 @@ def equidistant_on_sphere(
     p: int = 2,
     device: str = "cpu",
 ) -> Tensor:
-    """Returns n points on a sphere equidistant one from another"""
+    """
+    Returns n points on a sphere equidistant one from another.
+    For dims=prod(shape) >> 1 it will produce a trivial solution:
+    points = +- 1 / sqrt(dims) for all vector elements
+    """
     dims = math.prod(shape)
 
     # random init (n, dims)
     x = torch.randn(n, dims, dtype=torch.float32, requires_grad=True)  # type: ignore
 
+    # reproject to r=1.0
     with torch.no_grad():
-        x.data = r * x.data / x.data.norm(p=2.0, dim=-1, keepdim=True)
+        x.data = x.data / x.data.norm(p=p, dim=-1, keepdim=True)
 
     optim = torch.optim.Adam([x], lr=lr)
     eps = 1e-6
@@ -32,7 +37,7 @@ def equidistant_on_sphere(
     for _ in tqdm(range(steps), desc="Finding Equidistant Points"):
         optim.zero_grad()
 
-        dists = torch.cdist(x, x, p=2)  # (n, n)
+        dists = torch.cdist(x, x, p=p)  # (n, n)
         dists = dists + anull
 
         inv_dists = dists ** (-p)
@@ -42,16 +47,55 @@ def equidistant_on_sphere(
         energy.backward()
         optim.step()
 
+        # reproject to 1.0 so that points don't escape
         with torch.no_grad():
-            x.data = r * x.data / x.data.norm(dim=-1, keepdim=True).clamp_min(eps)
+            x.data = x.data / x.data.norm(p=p, dim=-1, keepdim=True).clamp_min(eps)
 
-    return x.detach().reshape((n, *shape)).float().to(device)
+    # after optimizing on r=1 just rescale to wanted r
+    return (r * x).detach().reshape((n, *shape)).float().to(device)
+
+
+def simplex_in_sphere(
+    n: int, shape: tuple[int, ...], r: float, device: str = "cpu", dtype=torch.float32
+) -> Tensor:
+    """
+    Places points on a regular simplex in prod(shape) dims that is within a sphere of radius r
+    Requires n <= prod(shape) + 1
+    All norms = r
+    All pair-wise distances = r * sqrt(2n / n-1)
+    """
+    dims = math.prod(shape)
+
+    assert n <= dims + 1, "For simplex points n needs to be less than dims+1"
+
+    # build centered simplex in R^dims
+    identity = torch.eye(n, dtype=dtype, device=device)
+    ones = torch.ones((n, n), dtype=dtype, device=device)
+
+    # the vertices are (n, n) but in reality they live in n-1 dimensional space
+    # so decompose to get the actual n-1 dimensional basis
+    vert = identity - ones / n  # center simplex at origin
+
+    # orthonormal basis are the points then using the qr decomposition
+    q, _ = torch.linalg.qr(vert)  # pylint: disable=E1102
+    vert = q[:, : (n - 1)]  # (n, n-1)
+
+    if dims < (n - 1):
+        vert = vert[:, :dims]
+    elif dims > (n - 1):
+        pad = torch.zeros((n, dims - (n - 1)), dtype=dtype, device=device)
+        vert = torch.cat([vert, pad], dim=1)
+
+    # normalize to radius r
+    vert = vert / vert.norm(p=2.0, dim=1, keepdim=True)
+    vert = r * vert
+
+    return vert.reshape((n, *shape))
 
 
 class GaussianMixture:
     """
     Makes n Gaussian mixtures in an arbitrary dimension space
-
 
     Each Gaussian's mean is sampled from a sphere surface
     equidistant from other Gaussians.
@@ -83,8 +127,13 @@ class GaussianMixture:
         self.r = torch.tensor(r, device=self.device)
 
         if n > 1:
-            self.means = equidistant_on_sphere(
-                n, shape, r, steps=5_000, lr=1e-3, p=2, device=device
+            # make simplex if possible, otherwise optimize and hope for the best
+            self.means = (
+                simplex_in_sphere(n, shape, r, device)
+                if n <= self.dims + 1
+                else equidistant_on_sphere(
+                    n, shape, r, steps=5_000, lr=1e-3, p=2, device=device
+                )
             )
         else:
             self.means = torch.zeros((n, *shape), dtype=torch.float32, device=device)
@@ -133,6 +182,10 @@ class GaussianMixture:
 
 
 class MultiIndependentNormal:
+    """
+    Multiple independent Isotropic Gaussians in n-D space
+    """
+
     def __init__(
         self, c: int, shape: tuple[int, ...], r: float, sigma: float, device: str
     ) -> None:
@@ -146,13 +199,13 @@ class MultiIndependentNormal:
         self.device = device
 
         # (c, shape)
-        self.means = (
-            equidistant_on_sphere(
+        if c <= self.dims + 1:
+            self.means = simplex_in_sphere(c, shape, r, device=device)
+
+        else:
+            self.means = equidistant_on_sphere(
                 c, shape, r, steps=10_000, lr=1e-1, p=2, device=device
             )
-            if c > 1
-            else torch.zeros((1, *self.shape), dtype=torch.float32, device=device)
-        )
 
         self.__inv_var = sigma ** (-2)
 
@@ -175,3 +228,34 @@ class MultiIndependentNormal:
         log_exp = 0.5 * diffs_sq * self.__inv_var
 
         return -self.__log_2pi - self.__log_sigma - log_exp
+
+
+def main():
+    import matplotlib.pyplot as plt
+    from matplotlib.patches import Circle
+
+    torch.manual_seed(42)
+
+    c = 3
+    dims = 2
+    k = 3
+
+    sigma = 1.0
+    r = k * sigma * (dims) ** 0.5
+
+    mn = MultiIndependentNormal(c=c, shape=(2,), r=r, sigma=sigma, device="cpu")
+    print(mn.means)
+    samples = mn.sample(1000)
+
+    plt.gca().add_patch(Circle((0, 0), radius=r, fill=False, color="r"))
+
+    for s in samples:
+        plt.scatter(s[:, 0], s[:, 1])
+
+    plt.xlim(-3 * r, 3 * r)
+    plt.ylim(-3 * r, 3 * r)
+    plt.show()
+
+
+if __name__ == "__main__":
+    main()

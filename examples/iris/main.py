@@ -53,12 +53,15 @@ def main():
     batch_size = 50
 
     sigma = 1.0
-    r = 5.0
+    k = 3.0
+    r = k * sigma * (2 * in_dims * (num_class - 1) / num_class) ** 0.5
 
-    # x0 sampler
+    # noise sampler
     multi_normal = MultiIndependentNormal(
         c=num_class, shape=(in_dims,), r=r, sigma=sigma, device=device
     )
+    print(multi_normal.means)
+    print(torch.cdist(multi_normal.means, multi_normal.means, p=2.0))
 
     # dataset
     x1, x2, x3 = get_iris(device=device)
@@ -71,14 +74,17 @@ def main():
     path = AffineMultiPath(AffinePath(CosineScheduler()), num_paths=num_class)
 
     optim = torch.optim.AdamW(vf.parameters(), lr=1e-3)
+    sched = torch.optim.lr_scheduler.ExponentialLR(
+        optim, gamma=(1e-5 / 1e-3) ** (1.0 / epochs)
+    )
 
     for _ in (pbar := tqdm(range(epochs))):
         optim.zero_grad()
 
-        x0 = multi_normal.sample(batch_size)
+        x_noise = multi_normal.sample(batch_size)
         t = torch.rand((batch_size,), dtype=torch.float32, device=device)
 
-        path_sample = path.sample(x0, x, t)
+        path_sample = path.sample(x, x_noise, t)
         dxt_hat = vf.forward(path_sample.xt, path_sample.t)
 
         loss = (dxt_hat - path_sample.dxt).square().mean()
@@ -88,6 +94,8 @@ def main():
 
         ema.update_ema_t()
 
+        sched.step()
+
         pbar.set_description(f"Loss: {loss.item():.3f}")
 
     ema.to_model()
@@ -95,13 +103,14 @@ def main():
 
     proc = ODEProcess(vf, RungeKuttaIntegrator(tableaus.RK4_TABLEAU, device=device))
     x_init = torch.cat([x1, x2, x3, torch.rand_like(x1)], dim=0)
-    intervals = torch.tensor([[1.0, 0.0]], dtype=torch.float32, device=device).expand(
+    intervals = torch.tensor([[0.0, 1.0]], dtype=torch.float32, device=device).expand(
         x_init.shape[0], 2
     )
 
     _, x_traj = proc.sample(x_init, intervals, steps=100)
     sols = x_traj[-1]
     probs = multi_normal.log_likelihood(sols)
+    print(probs.chunk(4))
 
     for i, c in enumerate(probs.argmax(dim=1).chunk(4)[:-1]):
         print((c == i).sum())
