@@ -63,6 +63,7 @@ def simplex_in_sphere(
     Requires n <= prod(shape) + 1
     All norms = r
     All pair-wise distances = r * sqrt(2n / n-1)
+    Deterministic for same seed
     """
     dims = math.prod(shape)
 
@@ -214,6 +215,7 @@ class MultiIndependentNormal:
             )
 
         self.__inv_var = sigma ** (-2)
+        self.__inv_dims = 1.0 / self.dims
 
         self.__log_sigma = self.dims * math.log(self.sigma)
         self.__log_2pi = 0.5 * self.dims * math.log(2 * math.pi)
@@ -233,34 +235,25 @@ class MultiIndependentNormal:
 
         log_exp = 0.5 * diffs_sq * self.__inv_var
 
-        return -self.__log_2pi - self.__log_sigma - log_exp
+        return (-self.__log_2pi - self.__log_sigma - log_exp) * self.__inv_dims
 
 
 def main():
-    import matplotlib.pyplot as plt
-    from matplotlib.patches import Circle
+    import math
 
     torch.manual_seed(42)
 
     c = 3
-    dims = 2
+    shape = (1, 32, 32)
+    dims = math.prod(shape)
     k = 3
 
     sigma = 1.0
     r = k * sigma * (dims) ** 0.5
 
-    mn = MultiIndependentNormal(c=c, shape=(2,), r=r, sigma=sigma, device="cpu")
-    print(mn.means)
-    samples = mn.sample(1000)
+    mn = MultiIndependentNormal(c=c, shape=shape, r=r, sigma=sigma, device="cpu")
 
-    plt.gca().add_patch(Circle((0, 0), radius=r, fill=False, color="r"))
-
-    for s in samples:
-        plt.scatter(s[:, 0], s[:, 1])
-
-    plt.xlim(-3 * r, 3 * r)
-    plt.ylim(-3 * r, 3 * r)
-    plt.show()
+    print(mn.log_likelihood(mn.means))
 
 
 if __name__ == "__main__":
