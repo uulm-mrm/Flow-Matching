@@ -36,12 +36,6 @@ def simplex_in_sphere(
         pad = torch.zeros((n, dims - (n - 1)), dtype=dtype, device=device)
         vert = torch.cat([vert, pad], dim=1)
 
-    # randomly rotate to avoid sparse vectors (might be slow for large dims)
-    # random rotation = orthonormal basis of gaussian
-    a = torch.randn(dims, dims, dtype=dtype, device=device)
-    q, _ = torch.linalg.qr(a)  # pylint: disable=E1102
-    vert = vert @ q.T
-
     # normalize to radius r=1.0
     vert = vert / vert.norm(p=2.0, dim=1, keepdim=True)
 
