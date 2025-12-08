@@ -1,15 +1,21 @@
+"""
+Learns to generate moons distribution
+"""
+
 import math
 
 from tqdm import tqdm
 
 import torch
 from torch import Tensor, nn
+from torch.distributions import Independent, Normal
 
 import matplotlib.pyplot as plt
+from matplotlib import cm
 
 from sklearn.datasets import make_moons
 
-from flow_matching import AffinePath, ODEProcess, MidpointIntegrator
+from flow_matching import ODEProcess, MidpointIntegrator, AffinePath
 from flow_matching.scheduler import OTScheduler
 
 DEVICE = "cuda:0"
@@ -18,16 +24,14 @@ torch.manual_seed(42)
 
 
 class VectorField(nn.Module):
-    def __init__(
-        self, in_dims: int, h_dims: int, t_dims: int = 1, c_dims: int = 1
-    ) -> None:
+    def __init__(self, in_dims: int, h_dims: int, t_dims: int = 1) -> None:
         super().__init__()
 
         self.in_dims = in_dims
         self.t_dims = t_dims
 
         self.mlp = nn.Sequential(
-            nn.Linear(in_dims + t_dims + c_dims, h_dims),
+            nn.Linear(in_dims + t_dims, h_dims),
             nn.SiLU(),
             nn.Linear(h_dims, h_dims),
             nn.SiLU(),
@@ -38,39 +42,31 @@ class VectorField(nn.Module):
             nn.Linear(h_dims, in_dims),
         )
 
-    def forward(self, xt: Tensor, t: Tensor, c: Tensor) -> Tensor:
+    def forward(self, xt: Tensor, t: Tensor) -> Tensor:
         """Calculates the speed of each point x at t
 
         Args:
             xt (Tensor): x at point t in time, size (B, ...)
             t (Tensor): time, size (B | 1,) broadcasted to xt
-            c (Tensor): context, size (B, C)
 
         Returns:
             Tensor: speed for each component of the input x
         """
-
-        # the sampler iterates through time in tensors shaped ([])
-        # so this broadcasts it to (B,1)
-        # but if time is already in (B,) like for training then this just makes it a vector
-        t = t.view(-1, self.t_dims).expand(xt.shape[0], self.t_dims)
-
-        z = torch.cat([xt, t, c], dim=-1)
+        z = torch.cat([xt, t], dim=-1)
 
         return self.mlp(z)
 
 
-def x1_sampler(samples: int) -> tuple[Tensor, Tensor]:
-    x, y = make_moons(samples, noise=0.05)
+def x1_sampler(samples: int) -> Tensor:
+    x, _ = make_moons(samples, noise=0.05)
 
     x = torch.from_numpy(x).float()
-    y = torch.from_numpy(y).float().reshape(-1, 1)
 
-    return x, y
+    return x
 
 
 def main():
-    batch_size = 4096
+    batch_size = 1024
 
     in_dims = 2
     h_dims = 512
@@ -84,13 +80,12 @@ def main():
         optim.zero_grad()
 
         x0 = torch.randn(batch_size, in_dims).to(DEVICE)
-        x1, y = x1_sampler(batch_size)
-        x1, y = x1.to(DEVICE), y.to(DEVICE)
+        x1 = x1_sampler(batch_size).to(DEVICE)
         t = torch.rand((batch_size,), dtype=torch.float32, device=DEVICE)
 
         ps = p.sample(x0, x1, t)
 
-        dxt_hat = vf.forward(ps.xt, ps.t, y)
+        dxt_hat = vf.forward(ps.xt, ps.t)
 
         loss = (dxt_hat - ps.dxt).square().mean()
 
@@ -101,18 +96,16 @@ def main():
 
     # integrate over time
     x0 = torch.randn((10_000, in_dims)).to(DEVICE)
-    y = torch.randint(0, 2, (x0.shape[0], 1), device=DEVICE)
     intervals = torch.tensor([[0.0, 1.0]], dtype=x0.dtype, device=x0.device)
     intervals = intervals.expand(x0.shape[0], 2)
     steps = 10
 
     vf = vf.eval()
     integrator = ODEProcess(vf, MidpointIntegrator())
-    _, x_traj = integrator.sample(x0, intervals, steps=steps, c=y)
+    _, x_traj = integrator.sample(x0, intervals, steps=steps)
 
     # plot path
     sols = x_traj.detach().cpu().numpy()
-    y = y.detach().cpu().flatten().numpy()
 
     ax_cols = math.ceil(sols.shape[0] ** 0.5)
     ax_rows = math.ceil(sols.shape[0] / ax_cols)
@@ -121,7 +114,16 @@ def main():
     # yes you can flatten axes they are a np.array
     axs = axs.flatten()  # type: ignore
     for i, sol in enumerate(sols):
-        axs[i].scatter(sol[:, 0], sol[:, 1], c=y, s=10)
+        H = axs[i].hist2d(sol[:, 0], sol[:, 1], 300, range=((-3, 3), (-3, 3)))
+
+        cmin = 0.0
+        cmax = torch.quantile(torch.from_numpy(H[0]), 0.99).item()
+
+        norm = cm.colors.Normalize(vmax=cmax, vmin=cmin)  # type: ignore
+
+        _ = axs[i].hist2d(
+            sol[:, 0], sol[:, 1], 300, range=((-3, 3), (-3, 3)), norm=norm
+        )
 
         axs[i].set_title(f"step = {i}")
         axs[i].set_xlim([-3, 3])
@@ -132,6 +134,30 @@ def main():
         fig.delaxes(axs[i])
 
     plt.tight_layout()
+    plt.show()
+
+    # visualize likelihood
+    t = torch.tensor([[1.0, 0.0]], device=DEVICE)
+
+    grid_size = 200
+    grid_axis = torch.linspace(-3.0, 3.0, grid_size)
+
+    x1 = torch.meshgrid(grid_axis, grid_axis, indexing="ij")
+    x1 = torch.stack([x1[0].flatten(), x1[1].flatten()], dim=1).to(DEVICE)
+    t = t.expand(x1.shape[0], 2)
+
+    log_p0 = Independent(
+        Normal(torch.zeros(2, device=DEVICE), torch.ones(2, device=DEVICE)), 1
+    ).log_prob
+
+    _, log_p1 = integrator.compute_likelihood(x1, t, log_p0, steps=10)
+
+    log_p1 = torch.exp(log_p1).reshape(grid_size, grid_size)
+    log_p1 = log_p1.detach().cpu().numpy()
+    norm = cm.colors.Normalize(vmax=1.0, vmin=0.0)  # type: ignore
+    plt.imshow(
+        log_p1, extent=(-3.0, 3.0, -3.0, 3.0), cmap="viridis", norm=norm, origin="lower"
+    )
     plt.show()
 
 
