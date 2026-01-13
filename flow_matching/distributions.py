@@ -73,6 +73,28 @@ class MultiIndependentNormal:
 
         return base.unsqueeze(0) * self.sigma + self.means.unsqueeze(1)
 
+    def sample_arbitrary(self, *ns: int) -> Tensor:
+        """Samples an arbitrary amount of points from each Gaussian in order of list ns
+
+        Args:
+            ns int: integers for how many samples per Gaussian
+
+        Returns:
+            Tensor: n samples for each centroid given n in ns in order of c
+        """
+        assert len(ns) == self.c, "A sample amount must exist for all classes"
+
+        total = sum(ns)
+        base = torch.randn(
+            size=(total, *self.shape), dtype=self.means.dtype, device=self.means.device
+        )
+
+        means = torch.repeat_interleave(
+            self.means, torch.tensor(ns, device=self.means.device), dim=0
+        )
+
+        return base * self.sigma + means
+
     def log_likelihood(self, x: Tensor) -> Tensor:
         """Calculates the log likelihood of x w.r.t all gaussians returning (n, c)"""
         diffs = x.unsqueeze(1) - self.means.unsqueeze(0)  # (n, c, D...)
@@ -94,6 +116,9 @@ def main():
     k = 3
 
     mn = MultiIndependentNormal(c=c, shape=shape, k=k, device="cpu")
+
+    t = mn.sample_arbitrary(1, 0, 2)
+    print(t.shape)
 
     # samples = mn.sample(1000)
     # for c in samples:
