@@ -100,34 +100,3 @@ class AnchoredPath:
         dxt = (d_norm_weights * x_anchors).sum(dim=0)  # (B, ...)
 
         return PathSample(xt, dxt, broadcast_to(t, x_anchors[0]))
-
-
-class AffineMultiPath:
-    """
-    Makes n Affine Paths of the same kind and calculates
-    the probability paths independently for them
-    """
-
-    def __init__(self, base_path: AffinePath, num_paths: int) -> None:
-        self.base_path = base_path
-        self.num_paths = num_paths
-
-    def sample(self, x0: Tensor, x1: Tensor, t: Tensor) -> PathSample:
-        """Samples from the affine multipath
-
-        Args:
-            x0 (Tensor): (num_paths, B, D...)
-            x1 (Tensor): (num_paths, B, D...)
-            t (Tensor): (B,)
-
-        Returns:
-            PathSample: (num_paths * B, D...) for xt, dxt and (num_paths * B,) for t
-        """
-        t = broadcast_to(t, x0[0])
-        t = t.repeat(x0.shape[0], *[1] * len(t.shape))
-        xt = self.base_path.sched.alpha(t) * x1 + self.base_path.sched.sigma(t) * x0
-        dxt = (
-            self.base_path.sched.d_alpha(t) * x1 + self.base_path.sched.d_sigma(t) * x0
-        )
-
-        return PathSample(xt.flatten(0, 1), dxt.flatten(0, 1), t.flatten(0, 1))
