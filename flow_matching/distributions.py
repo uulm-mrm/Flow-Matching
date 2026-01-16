@@ -60,7 +60,7 @@ class MultiIndependentNormal:
 
         self.device = device
 
-        # (c, shape)
+        # (n, shape)
         self.means = simplex_in_sphere(n, shape, r=r, device=device)
         self.var = torch.tensor(var, device=self.device)
 
@@ -94,12 +94,12 @@ class MultiIndependentNormal:
             x (Tensor): input tensor size (B, D...)
 
         Returns:
-            Tensor: Energies for each of the Gaussians (B, c)
+            Tensor: Energies for each of the Gaussians (B, n)
         """
 
-        diffs = x.unsqueeze(1) - self.means.unsqueeze(0)  # (B, c, D...)
+        diffs = x.unsqueeze(1) - self.means.unsqueeze(0)  # (B, n, D...)
 
-        diffs_sq = diffs.flatten(2).square().sum(dim=2)  # (B, c)
+        diffs_sq = diffs.flatten(2).square().sum(dim=2)  # (B, n)
 
         # as dims -> inf, diffs -> var * dims
         # so divide by dims as well
