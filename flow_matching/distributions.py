@@ -5,7 +5,7 @@ from torch import Tensor
 
 
 def simplex_in_sphere(
-    n: int, shape: tuple[int, ...], device: str = "cpu", dtype=torch.float32
+    n: int, shape: tuple[int, ...], r: float, device: str = "cpu", dtype=torch.float32
 ) -> Tensor:
     """
     Places points on a regular simplex in prod(shape) dims that is within a sphere of radius r
@@ -39,6 +39,9 @@ def simplex_in_sphere(
     # normalize to radius r=1.0
     vert = vert / vert.norm(p=2.0, dim=1, keepdim=True)
 
+    # scale to radius r
+    vert *= r
+
     return vert.reshape((n, *shape))
 
 
@@ -47,62 +50,60 @@ class MultiIndependentNormal:
     Multiple independent Isotropic Gaussians in n-D space
     """
 
-    def __init__(self, c: int, shape: tuple[int, ...], k: float, device: str) -> None:
-        self.c = c
+    def __init__(
+        self, n: int, shape: tuple[int, ...], r: float, var: float, device: str
+    ) -> None:
+        self.n = n
 
         self.shape = shape
         self.dims = math.prod(shape)
 
-        self.sigma = 1 / (k * self.dims**0.5)
         self.device = device
 
         # (c, shape)
-        self.means = simplex_in_sphere(c, shape, device=device)
+        self.means = simplex_in_sphere(n, shape, r=r, device=device)
+        self.var = torch.tensor(var, device=self.device)
 
-        self.__inv_var = self.sigma ** (-2)
-        self.__inv_dims = 1.0 / self.dims
-
-        self.__log_sigma = self.dims * math.log(self.sigma)
-        self.__log_2pi = 0.5 * self.dims * math.log(2 * math.pi)
-
-    def sample(self, n: int) -> Tensor:
-        """Samples n points from each Gaussian for a total of (c, n, D...) points"""
-        base = torch.randn(
-            size=(n, *self.shape), dtype=self.means.dtype, device=self.means.device
-        )
-
-        return base.unsqueeze(0) * self.sigma + self.means.unsqueeze(1)
-
-    def sample_arbitrary(self, *ns: int) -> Tensor:
-        """Samples an arbitrary amount of points from each Gaussian in order of list ns
+    def sample(self, *points: int) -> Tensor:
+        """Samples p points from each Gaussian once, in order of arguments
 
         Args:
-            ns int: integers for how many samples per Gaussian
+            points int: integers for how many samples per Gaussian
 
         Returns:
-            Tensor: n samples for each centroid given n in ns in order of c
+            Tensor: (sum(*points), D...) samples
         """
-        assert len(ns) == self.c, "A sample amount must exist for all classes"
 
-        total = sum(ns)
+        assert len(points) == self.n, "A sample amount must exist for all classes"
+
+        total = sum(points)
         base = torch.randn(
             size=(total, *self.shape), dtype=self.means.dtype, device=self.means.device
         )
 
         means = torch.repeat_interleave(
-            self.means, torch.tensor(ns, device=self.means.device), dim=0
+            self.means, torch.tensor(points, device=self.means.device), dim=0
         )
 
-        return base * self.sigma + means
+        return base * self.var.sqrt() + means
 
     def log_likelihood(self, x: Tensor) -> Tensor:
-        """Calculates the log likelihood of x w.r.t all gaussians returning (n, c)"""
-        diffs = x.unsqueeze(1) - self.means.unsqueeze(0)  # (n, c, D...)
-        diffs_sq = diffs.square().flatten(2).sum(dim=2)  # (n, c)
+        """Calculates -1/2 * 1/c * ||x-means||^2 w.r.t each Gaussian
 
-        log_exp = 0.5 * diffs_sq * self.__inv_var
+        Args:
+            x (Tensor): input tensor size (B, D...)
 
-        return (-self.__log_2pi - self.__log_sigma - log_exp) * self.__inv_dims
+        Returns:
+            Tensor: Energies for each of the Gaussians (B, c)
+        """
+
+        diffs = x.unsqueeze(1) - self.means.unsqueeze(0)  # (B, c, D...)
+
+        diffs_sq = diffs.flatten(2).square().sum(dim=2)  # (B, c)
+
+        # as dims -> inf, diffs -> var * dims
+        # so divide by dims as well
+        return -0.5 * diffs_sq / self.var / self.dims
 
 
 def main():
@@ -110,27 +111,26 @@ def main():
 
     torch.manual_seed(42)
 
-    c = 3
-    shape = (1, 32, 32)
-    # shape = (2,)
-    k = 3
+    n = 3
+    # shape = (256, 7, 7)
+    shape = (2,)
+    r = 3.0
+    var = 1.0
 
-    mn = MultiIndependentNormal(c=c, shape=shape, k=k, device="cpu")
+    mn = MultiIndependentNormal(n=n, shape=shape, r=r, var=var, device="cpu")
 
-    t = mn.sample_arbitrary(1, 0, 2)
+    t = mn.sample(1, 0, 2)
     print(t.shape)
 
-    # samples = mn.sample(1000)
-    # for c in samples:
-    #     plt.scatter(c[:, 0], c[:, 1])
-    # plt.show()
+    for i, c in enumerate([100, 50, 20]):
+        slist = [0] * n
+        slist[i] = c
 
-    for m in mn.sample(10):
-        plt.hist(m.flatten().numpy(), bins=50, edgecolor="black")
+        samples = mn.sample(*slist)
 
-    plt.xlabel("Value")
-    plt.ylabel("Frequency")
-    plt.title("Distribution of Tensor Values")
+        plt.scatter(samples[:, 0], samples[:, 1])
+
+    plt.scatter(mn.means[:, 0], mn.means[:, 1], c="black")
     plt.show()
 
 
