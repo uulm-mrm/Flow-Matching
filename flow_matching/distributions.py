@@ -51,7 +51,7 @@ class MultiIndependentNormal:
     """
 
     def __init__(
-        self, n: int, shape: tuple[int, ...], r: float, var: float, device: str
+        self, n: int, shape: tuple[int, ...], r: float, var_coef: float, device: str
     ) -> None:
         self.n = n
 
@@ -62,7 +62,7 @@ class MultiIndependentNormal:
 
         # (n, shape)
         self.means = simplex_in_sphere(n, shape, r=r, device=device)
-        self.var = torch.tensor(var, device=self.device)
+        self.var_coef = torch.tensor(var_coef, device=self.device)
 
     def sample(self, *points: int) -> Tensor:
         """Samples p points from each Gaussian once, in order of arguments
@@ -85,7 +85,7 @@ class MultiIndependentNormal:
             self.means, torch.tensor(points, device=self.means.device), dim=0
         )
 
-        return base * self.var.sqrt() + means
+        return base * self.var_coef.sqrt() + means
 
     def log_likelihood(self, x: Tensor) -> Tensor:
         """Calculates -1/2 * 1/c * ||x-means||^2 w.r.t each Gaussian
@@ -103,7 +103,70 @@ class MultiIndependentNormal:
 
         # as dims -> inf, diffs -> var * dims
         # so divide by dims as well
-        return -0.5 * diffs_sq / self.var / self.dims
+        return -0.5 * diffs_sq / self.var_coef
+
+    def get_scores(self, x: Tensor) -> Tensor:
+        """Calculates the score of each input point w.r.t all Gaussians using:
+        S_i = 1/var_coef * (<x, m_i> - 1/2 ||m_i|| ^2); where <x, m_i> is the dot product
+
+        A direction compatibility test more-less
+
+        Args:
+            x (Tensor): input tensor size (B, D...)
+
+        Returns:
+            Tensor: Scores for each of the Gaussians (B, n)
+        """
+
+        # flatten for dot product
+        x_flat = x.view(x.shape[0], -1)  # (B, D...)
+        means_flat = self.means.view(self.means.shape[0], -1)  # (n, D...)
+
+        # <x, m_i> for all m_i in means
+        x_dot_m = torch.matmul(x_flat, means_flat.t())  # (B, n)
+
+        # 1/2 ||m_i||^2
+        mean_norms = 0.5 * torch.norm(means_flat, dim=1).square()
+
+        return (x_dot_m - mean_norms) / self.var_coef
+
+    def check_outlier(
+        self, x: Tensor, scores: Tensor, sigma_threshold: int = 3
+    ) -> Tensor:
+        """Based on points x and scores for those points, checks whether they are outliers
+        Does this by calculating the distance, and checking how many standard deviations
+        it is from the mean with the best score. If it's above threshold deviations then it's OOD
+
+        A distance compatibility test more-less
+
+        Args:
+            x (Tensor): input points to check whether they are outliers of size (B, D...)
+            scores (Tensor): scores for those points of size (B, n)
+
+        Returns:
+            Tensor: a mask of size (B) with True if outlier
+        """
+
+        # get distances from best scores
+        best_score, _ = torch.max(scores, dim=1)
+
+        # ||x - m_best||^2 = ||x||^2 - 2*var*score because score is from ||x-m|| already
+        x_norms = torch.norm(x, dim=1).square()
+        diffs_sq = x_norms - (2 * self.var_coef * best_score)
+
+        # calculate threshold
+        # for a Gaussian, ||x - m||^2 / var follows Chi-Squared
+        # which for d -> inf approaches N(m=D*var, sigma^2=2D*var^2)
+        # so OOD is distances which are > threshold * sigma of this N
+
+        # mean of the above mentioned distance N distro
+        expected_dist = self.dims * self.var_coef
+        dist_sigma = (  # sigma of the above mentioned distance N distro
+            torch.tensor(2.0 * self.dims, device=self.device).sqrt() * self.var_coef
+        )
+
+        # outlier mask
+        return torch.abs(diffs_sq - expected_dist) > (sigma_threshold * dist_sigma)
 
 
 def main():
@@ -117,7 +180,7 @@ def main():
     r = 3.0
     var = 1.0
 
-    mn = MultiIndependentNormal(n=n, shape=shape, r=r, var=var, device="cpu")
+    mn = MultiIndependentNormal(n=n, shape=shape, r=r, var_coef=var, device="cpu")
 
     t = mn.sample(1, 0, 2)
     print(t.shape)

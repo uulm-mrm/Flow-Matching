@@ -1,8 +1,4 @@
-from itertools import combinations
-
 from tqdm import tqdm
-
-import matplotlib.pyplot as plt
 
 import torch
 from torch import nn, Tensor
@@ -57,7 +53,7 @@ def main():
 
     # noise sampler
     multi_normal = MultiIndependentNormal(
-        n=num_class, shape=(in_dims,), r=r, var=var, device=device
+        n=num_class, shape=(in_dims,), r=r, var_coef=var, device=device
     )
     print(multi_normal.means)
     print(torch.cdist(multi_normal.means, multi_normal.means, p=2.0))
@@ -103,35 +99,17 @@ def main():
 
     _, x_traj = proc.sample(x_init, intervals, steps=100)
     sols = x_traj[-1]
-    probs = multi_normal.log_likelihood(sols)
 
-    print(probs.chunk(4))
+    probs = multi_normal.log_likelihood(sols)
+    scores = multi_normal.get_scores(sols)
+    outliers = multi_normal.check_outlier(sols, scores, sigma_threshold=3)
+
+    print(f"Log Probabilities {probs.chunk(4)}")
+    print(f"Scores: {scores.chunk(4)}")
+    print(f"Outliers: {outliers.chunk(4)}")
 
     for i, c in enumerate(probs.argmax(dim=1).chunk(4)[:-1]):
         print((c == i).sum())
-
-    # plot all against eachother
-    colors = ["r", "g", "b", "y"]
-    _, axes = plt.subplots(2, 3)
-    axes = axes.flatten()
-
-    dim_pairs = list(combinations(range(in_dims), 2))
-
-    for idx, (i, j) in enumerate(dim_pairs):
-        ax = axes[idx]
-
-        for c, sol in enumerate(sols.chunk(4)):
-            sol = sol.cpu().numpy()
-            ax.scatter(
-                sol[:, i], sol[:, j], color=colors[c], alpha=0.7, label=f"Class {c}"
-            )
-
-        ax.set_xlabel(f"Dim {i}")
-        ax.set_ylabel(f"Dim {j}")
-        ax.legend()
-
-    plt.tight_layout()
-    plt.show()
 
 
 if __name__ == "__main__":
