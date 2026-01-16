@@ -7,13 +7,7 @@ import matplotlib.pyplot as plt
 import torch
 from torch import nn, Tensor
 
-from flow_matching import (
-    AffineMultiPath,
-    AffinePath,
-    ODEProcess,
-    RungeKuttaIntegrator,
-    tableaus,
-)
+from flow_matching import AffinePath, ODEProcess, RungeKuttaIntegrator, tableaus
 from flow_matching.scheduler import CosineScheduler
 from flow_matching.distributions import MultiIndependentNormal
 from modules.utils import EMA
@@ -53,42 +47,41 @@ def main():
 
     num_class = 3
     in_dims = 4
-    k = 3.0
     h_dims = 512
 
+    r = 3.0
+    var = 1.0
+
     epochs = 5_000
-    batch_size = 50
+    batch_size = 150
 
     # noise sampler
     multi_normal = MultiIndependentNormal(
-        c=num_class, shape=(in_dims,), k=k, device=device
+        n=num_class, shape=(in_dims,), r=r, var=var, device=device
     )
     print(multi_normal.means)
     print(torch.cdist(multi_normal.means, multi_normal.means, p=2.0))
 
     # dataset
     x1, x2, x3 = get_iris(device=device)
-    x = torch.stack([x1, x2, x3], dim=0)
+    x = torch.cat([x1, x2, x3], dim=0)
 
     # fm stuff
     vf = VectorField(in_dims, h_dims, t_d=1).to(device)
     ema = EMA(vf, rate=0.999)
 
-    path = AffineMultiPath(AffinePath(CosineScheduler()), num_paths=num_class)
+    path = AffinePath(CosineScheduler())
 
     optim = torch.optim.AdamW(vf.parameters(), lr=1e-3)
-    sched = torch.optim.lr_scheduler.ExponentialLR(
-        optim, gamma=(1e-5 / 1e-3) ** (1.0 / epochs)
-    )
 
     for _ in (pbar := tqdm(range(epochs))):
         optim.zero_grad()
 
-        x_noise = multi_normal.sample(batch_size)
+        x_noise = multi_normal.sample(x1.shape[0], x2.shape[0], x3.shape[0])
         t = torch.rand((batch_size,), dtype=torch.float32, device=device)
 
         path_sample = path.sample(x_noise, x, t)
-        dxt_hat = vf.forward(path_sample.xt, path_sample.t)
+        dxt_hat = vf.forward(path_sample.xt, t.unsqueeze(1))
 
         loss = (dxt_hat - path_sample.dxt).square().mean()
 
@@ -96,8 +89,6 @@ def main():
         optim.step()
 
         ema.update_ema_t()
-
-        sched.step()
 
         pbar.set_description(f"Loss: {loss.item():.3f}")
 
