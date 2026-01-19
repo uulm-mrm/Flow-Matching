@@ -100,15 +100,12 @@ def main():
     _, x_traj = proc.sample(x_init, intervals, steps=100)
     sols = x_traj[-1]
 
-    probs = multi_normal.log_likelihood(sols)
-    scores = multi_normal.get_scores(sols)
-    outliers = multi_normal.check_outlier(sols, scores, sigma_threshold=3)
+    bel, unc = multi_normal.get_credability(sols)
 
-    print(f"Log Probabilities {probs.chunk(4)}")
-    print(f"Scores: {scores.chunk(4)}")
-    print(f"Outliers: {outliers.chunk(4)}")
+    print(f"Belief: {bel.chunk(4)}")
+    print(f"Uncertainty: {unc.chunk(4)}")
 
-    for i, c in enumerate(probs.argmax(dim=1).chunk(4)[:-1]):
+    for i, c in enumerate(bel.argmax(dim=1).chunk(4)[:-1]):
         print((c == i).sum())
 
 

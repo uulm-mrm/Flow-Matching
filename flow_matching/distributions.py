@@ -130,6 +130,71 @@ class MultiIndependentNormal:
 
         return (x_dot_m - mean_norms) / self.var_coef
 
+    def get_square_distances(self, x: Tensor, scores: Tensor | None = None) -> Tensor:
+        """Based on points x, returns the distance from each of the Gaussian's means
+
+
+        Args:
+            x (Tensor): input tensor siize (B, D...)
+            scores (Tensor | None, optional): scores if previously calculated size (B, n).
+                To save time on calculating the distances since they're part of the score.
+                Defaults to None.
+
+        Returns:
+            Tensor: Distances from each Gaussian's mean (the numerator of the Gaussian)
+        """
+
+        x_flat = x.view(x.shape[0], -1)  # (B, D...)
+        x_norms_sq = torch.norm(x_flat, dim=1).square()  # (B,)
+
+        if scores is not None:
+            return x_norms_sq.unsqueeze(1) - (2 * self.var_coef * scores)
+
+        means_flat = self.means.view(self.means.shape[0], -1)
+        mean_norms_sq = torch.norm(means_flat, dim=1).square()
+
+        return x_norms_sq + mean_norms_sq - 2 * torch.dot(x_flat, means_flat.t())
+
+    def get_credability(self, x: Tensor) -> tuple[Tensor, Tensor]:
+        """Based on points x calculates the belief and ucertainty for each.
+        The class of the point is the argmax of the belief vector for that point.
+        If uncertainty is above 0.5 then the point should be understood as OOD,
+        but it still holds information for the closest Gaussian.
+
+        Args:
+            x (Tensor): input points size (B, D...)
+
+        Returns:
+            tuple[Tensor, Tensor]: (B, n) and (B,) tensors for belief in each of the
+                Gaussians, and overall uncertainty of the placement of the point
+        """
+
+        # score and dist for belief and uncertainty
+        scores = self.get_scores(x)  # (B, n)
+        square_dists = self.get_square_distances(x, scores)  # (B, n)
+
+        # distance -> quality. The distance in the Gaussian N(m, cI) follows N_d(Dc, 2Dc^2)
+        # so the quality metric defines how much the square distance diverges from the expected
+        # distances in the distance Gaussian calculated as:
+        # exp (-|d^2 - Dc| / sqrt(2Dc^2)) e [0, 1]
+        quality = torch.exp(
+            -torch.abs(square_dists - self.dims * self.var_coef)
+            / ((2.0 * self.dims) ** 0.5 * self.var_coef)
+        )  # (B, n)
+
+        # evidence of a point belonging to Gaussian N_i is then defined as
+        # the score weighted by the "quality" of the point
+        evidence = torch.exp(scores) * quality  # (B, n)
+
+        # belief and uncertainty are then calculated using Dirichelt-Based Credal Set theory
+        # b = e_i / W + sum e_j; u = W / W + sum e_j
+        # where W is the prior strenght, most usually the number of elements in the Credal Set
+        denom = self.n + evidence.sum(dim=1, keepdim=True)  # (B, n)
+        beliefs = evidence / denom  # (B, n)
+        uncertainty = self.n / denom  # (B, 1)
+
+        return beliefs, uncertainty
+
     def check_outlier(
         self, x: Tensor, scores: Tensor, sigma_threshold: int = 3
     ) -> Tensor:
@@ -148,11 +213,10 @@ class MultiIndependentNormal:
         """
 
         # get distances from best scores
-        best_score, _ = torch.max(scores, dim=1)
-
-        # ||x - m_best||^2 = ||x||^2 - 2*var*score because score is from ||x-m|| already
-        x_norms = torch.norm(x, dim=1).square()
-        diffs_sq = x_norms - (2 * self.var_coef * best_score)
+        best_score_idx = torch.argmax(scores, dim=1)
+        diffs_sq = self.get_square_distances(x, scores)[
+            torch.arange(best_score_idx.shape[0]), best_score_idx
+        ]
 
         # calculate threshold
         # for a Gaussian, ||x - m||^2 / var follows Chi-Squared
