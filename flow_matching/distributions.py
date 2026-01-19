@@ -179,7 +179,7 @@ class MultiIndependentNormal:
 
         # distance -> quality
         mean_dist = self.dims * self.var_coef
-        delta = (square_dists - mean_dist) / mean_dist
+        delta = torch.abs(square_dists - mean_dist) / mean_dist
 
         alpha = 1.0  # tune
         quality = torch.exp(-alpha * torch.clamp(delta, min=0.0))
