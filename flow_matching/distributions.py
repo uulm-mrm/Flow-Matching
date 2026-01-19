@@ -153,7 +153,11 @@ class MultiIndependentNormal:
         means_flat = self.means.view(self.means.shape[0], -1)
         mean_norms_sq = torch.norm(means_flat, dim=1).square()
 
-        return x_norms_sq + mean_norms_sq - 2 * torch.dot(x_flat, means_flat.t())
+        return (
+            x_norms_sq.unsqueeze(1)
+            + mean_norms_sq.unsqueeze(1)
+            - 2 * torch.dot(x_flat, means_flat.t())
+        )
 
     def get_credability(self, x: Tensor) -> tuple[Tensor, Tensor]:
         """Based on points x calculates the belief and ucertainty for each.
@@ -173,17 +177,17 @@ class MultiIndependentNormal:
         scores = self.get_scores(x)  # (B, n)
         square_dists = self.get_square_distances(x, scores)  # (B, n)
 
-        # distance -> quality. The distance in the Gaussian N(m, cI) follows N_d(Dc, 2Dc^2)
-        # so the quality metric defines how much the square distance diverges from the expected
-        # distances in the distance Gaussian calculated as:
-        # exp (-|d^2 - Dc| / sqrt(2Dc^2)) e [0, 1]
-        quality = torch.exp(
-            -torch.abs(square_dists - self.dims * self.var_coef)
-            / ((2.0 * self.dims) ** 0.5 * self.var_coef)
-        )  # (B, n)
+        # distance -> quality
+        mean_dist = self.dims * self.var_coef
+        delta = (square_dists - mean_dist) / mean_dist
+
+        alpha = 1.0  # tune
+        quality = torch.exp(-alpha * torch.clamp(delta, min=0.0))
 
         # evidence of a point belonging to Gaussian N_i is then defined as
         # the score weighted by the "quality" of the point
+        # normalize scores bcs exp is used on them
+        scores = scores - scores.max(dim=1, keepdim=True).values
         evidence = torch.exp(scores) * quality  # (B, n)
 
         # belief and uncertainty are then calculated using Dirichelt-Based Credal Set theory
