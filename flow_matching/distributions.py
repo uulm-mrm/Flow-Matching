@@ -97,10 +97,25 @@ class MultiIndependentNormal:
         return base * self.var_coef.sqrt() + means
 
     def get_square_distances(self, x: Tensor) -> Tensor:
-        x_flat = x.view(x.shape[0], self.dims)
-        means_flat = self.means.view(self.n, self.dims)
+        # if you train with sampling like above then this is what the distance needs to be
+        # only up to the n-1 dimension of features
+        x_flat = x.view(x.shape[0], self.dims)[:, : self.n - 1]
+        means_flat = self.means.view(self.n, self.dims)[:, : self.n - 1]
 
         return torch.cdist(x_flat, means_flat).square()
+
+    def get_credal_metrics(self, x: Tensor) -> dict[str, Tensor]:
+        dist_sq = self.get_square_distances(x)
+
+        dist_rbf = torch.exp(-dist_sq / (2.0 * self.var_coef))
+
+        w = 1.0  # TODO: either self.n or 1.0 or 1/self.n?
+        credal_denom = dist_rbf.sum(dim=-1) + w
+
+        belief = dist_rbf / credal_denom.unsqueeze(1)
+        vacuity = w / credal_denom
+
+        return {"belief": belief, "vacuity": vacuity}
 
 
 def main():
@@ -116,11 +131,14 @@ def main():
     print(mn.means)
 
     samples = mn.sample(*[3] * n)
-    print(samples)
     ood_samples = torch.rand((3, *shape), device="cpu") + 10.0
 
-    print(mn.get_square_distances(samples))
-    # print(mn.get_square_distances(ood_samples))
+    dsq = mn.get_square_distances(samples)
+    rbf = torch.exp(-dsq / (2 * mn.var_coef))
+
+    print("Samples: ", samples)
+    print("RBF of d^2: ", rbf)
+    print("Credal metrics: ", mn.get_credal_metrics(samples))
 
 
 if __name__ == "__main__":
