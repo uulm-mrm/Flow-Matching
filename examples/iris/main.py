@@ -100,7 +100,7 @@ def main():
     _, x_traj = proc.sample(x_init, intervals, steps=100)
     sols = x_traj[-1]
 
-    ds = multi_normal.square_distances(sols)
+    ds = multi_normal.get_square_distances(sols)
     print(ds)
 
     for i, c in enumerate(ds.argmin(dim=1).chunk(4)[:-1]):

@@ -77,9 +77,18 @@ class MultiIndependentNormal:
         assert len(points) == self.n, "A sample amount must exist for all classes"
 
         total = sum(points)
-        base = torch.randn(
-            size=(total, *self.shape), dtype=self.means.dtype, device=self.means.device
+
+        base = torch.zeros(
+            size=(total, self.dims),
+            dtype=self.means.dtype,
+            device=self.means.device,
         )
+        base[:, : self.n - 1] = torch.randn(
+            size=(total, self.n - 1),
+            dtype=self.means.dtype,
+            device=self.means.device,
+        )
+        base = base.reshape(total, *self.shape)
 
         means = torch.repeat_interleave(
             self.means, torch.tensor(points, device=self.means.device), dim=0
@@ -88,28 +97,30 @@ class MultiIndependentNormal:
         return base * self.var_coef.sqrt() + means
 
     def get_square_distances(self, x: Tensor) -> Tensor:
-        x_flat = x.view(x.shape[0], self.dims)[:, : self.n]
-        means_flat = self.means.view(self.n, self.dims)[:, : self.n]
+        x_flat = x.view(x.shape[0], self.dims)
+        means_flat = self.means.view(self.n, self.dims)
 
         return torch.cdist(x_flat, means_flat).square()
 
 
 def main():
     torch.set_printoptions(precision=4, sci_mode=False)
-    torch.manual_seed(42)
+    torch.manual_seed(1)
 
-    n = 2
-    shape = (3,)
+    n = 3
+    shape = (4,)
     r = 1.0
     var = 1 / 3.0
 
     mn = MultiIndependentNormal(n=n, shape=shape, r=r, var_coef=var, device="cpu")
+    print(mn.means)
 
     samples = mn.sample(*[3] * n)
+    print(samples)
     ood_samples = torch.rand((3, *shape), device="cpu") + 10.0
 
     print(mn.get_square_distances(samples))
-    print(mn.get_square_distances(ood_samples))
+    # print(mn.get_square_distances(ood_samples))
 
 
 if __name__ == "__main__":
