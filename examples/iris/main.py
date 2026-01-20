@@ -100,12 +100,10 @@ def main():
     _, x_traj = proc.sample(x_init, intervals, steps=100)
     sols = x_traj[-1]
 
-    bel, unc = multi_normal.get_credability(sols)
+    ds = multi_normal.square_distances(sols)
+    print(ds)
 
-    print(f"Belief: {bel.chunk(4)}")
-    print(f"Uncertainty: {unc.chunk(4)}")
-
-    for i, c in enumerate(bel.argmax(dim=1).chunk(4)[:-1]):
+    for i, c in enumerate(ds.argmin(dim=1).chunk(4)[:-1]):
         print((c == i).sum())
 
 
