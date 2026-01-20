@@ -87,28 +87,29 @@ class MultiIndependentNormal:
 
         return base * self.var_coef.sqrt() + means
 
-    def square_distances(self, x: Tensor) -> Tensor:
+    def get_square_distances(self, x: Tensor) -> Tensor:
         x_flat = x.view(x.shape[0], self.dims)[:, : self.n]
         means_flat = self.means.view(self.n, self.dims)[:, : self.n]
 
-        return torch.cdist(x_flat, means_flat)
+        return torch.cdist(x_flat, means_flat).square()
 
 
 def main():
+    torch.set_printoptions(precision=4, sci_mode=False)
     torch.manual_seed(42)
 
     n = 2
-    shape = (256, 7, 7)
-    r = 3.0
-    var = 1.0
+    shape = (3,)
+    r = 1.0
+    var = 1 / 3.0
 
-    mn = MultiIndependentNormal(n=n, shape=shape, r=r, var_coef=var, device="cuda")
+    mn = MultiIndependentNormal(n=n, shape=shape, r=r, var_coef=var, device="cpu")
 
     samples = mn.sample(*[3] * n)
-    dsq = mn.square_distances(samples)
+    ood_samples = torch.rand((3, *shape), device="cpu") + 10.0
 
-    print(dsq)
-    print(dsq[:, 0] - dsq[:, 1])
+    print(mn.get_square_distances(samples))
+    print(mn.get_square_distances(ood_samples))
 
 
 if __name__ == "__main__":
