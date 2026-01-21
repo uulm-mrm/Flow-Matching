@@ -109,7 +109,7 @@ def main():
 
     # rescale similarities to [0, 1]
     measure = (sims + 1) * 0.5
-    belief, vacuity = credal_measures(measure, quality, W=3.0)
+    belief, vacuity = credal_measures(measure, quality, W=1.0)
     print("Belief: ", belief.chunk(4))
     print("Vacuity: ", vacuity.chunk(4))
 
