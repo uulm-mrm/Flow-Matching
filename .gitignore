@@ -1,6 +1,4 @@
-examples/mnist/
-!examples/mnist/*.py
-.vscode
+examples/iris/*.pt
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
