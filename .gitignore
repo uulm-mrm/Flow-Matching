@@ -2,6 +2,7 @@
 
 examples/iris/*.pt
 examples/mixture/*.pt
+examples/deltas/*.pt
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
