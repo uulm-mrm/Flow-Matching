@@ -1,4 +1,7 @@
+.vscode/
+
 examples/iris/*.pt
+examples/mixture/*.pt
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
