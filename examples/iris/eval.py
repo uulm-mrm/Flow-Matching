@@ -34,7 +34,7 @@ def main():
     ood = torch.randn((50, 4), dtype=torch.float32, device=device) + 10.0
     x_init = torch.cat([ds.x.to(device), ood], dim=0)
 
-    intervals = torch.tensor([[1.0, 0.0]], dtype=torch.float32, device=device)
+    intervals = torch.tensor([[0.0, 1.0]], dtype=torch.float32, device=device)
     intervals = intervals.expand(x_init.shape[0], 2)
 
     # solve process

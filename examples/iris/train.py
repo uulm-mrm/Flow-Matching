@@ -13,6 +13,29 @@ from modules.utils import EMA
 from examples.iris.net import VectorField
 from examples.iris.data import IrisDataset
 
+"""
+Maybe the vectorfield around the place of all input data is quite large and pointing towards the only dirac
+somehow try to make the space super small around the known data, see if you can control it somehow
+Anything that isn't in the known classes should flow outwards, not inward
+
+If you were to plot it, there would be like a white hole around where the data is
+followed by lines going towards the dirac deltas in a corridor
+followed by a black hole around the dirac deltas near the end of time
+
+So try to make this corridor as small as possible, and try to make the holes as small as possible
+only for the things from ID to flow correctly, rest are in a repulsive field!!!
+"""
+
+"""
+New goal:
+1. sample t
+2. sample x, y
+3. sample path for xt
+4. NEW STEP: network -> energy
+5. NEW STEP: grad of energy = predicted velocity
+6. (dxt - vt)**2 / n
+"""
+
 
 def main():
     torch.manual_seed(42)
@@ -28,7 +51,7 @@ def main():
     batch_size = 50
 
     # dataset
-    ds = IrisDataset(categories=(0, 1))
+    ds = IrisDataset(categories=(0,))
     dl = DataLoader(ds, batch_size=batch_size, shuffle=True, drop_last=True)
 
     # fm stuff
@@ -49,7 +72,7 @@ def main():
 
             t = torch.rand((batch_size,), dtype=torch.float32, device=device)
 
-            path_sample = path.sample(y, x, t)
+            path_sample = path.sample(x, y, t)
             dxt_hat = vf.forward(path_sample.xt, t.unsqueeze(1))
 
             loss = (dxt_hat - path_sample.dxt).square().mean()
