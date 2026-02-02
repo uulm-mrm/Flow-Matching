@@ -4,7 +4,6 @@ import torch
 from torch import Tensor, nn
 
 from .integrator import Integrator
-from .seeker import Seeker
 
 
 def gradient(y: Tensor, x: Tensor) -> Tensor:
@@ -51,7 +50,8 @@ class ODEProcess:
             **vf_extras: additional parameters for the model if needed
 
         Returns:
-            Tensor: (steps+1, B, 1) and (steps+1, B, D...) of time and solution trajectories
+            tuple[Tensor, Tensor]: (steps+1, B, 1) of time
+            and (steps+1, B, D...) of solution trajectories
         """
 
         # function to integrate over time
@@ -181,51 +181,46 @@ class ODEProcess:
 
         return sol, log_p  # type: ignore
 
-    def classify(
-        self,
-        seeker: Seeker,
-        x: Tensor,
-        log_p0: Callable[[Tensor], Tensor],
-        interval: tuple[float, float],
-        steps: int = 10,
-        est_steps: int = 1,
-        eps: float = 1e-3,
-        **vf_extras
-    ):
-        """Classifies a set of points inside an interval based on their probabilities
+
+class PotentialProcess:
+    """
+    Process solver for the gradient based potential manifold,
+    that can sample points in the field using the potential
+    """
+
+    def __init__(self, potential_manifold: nn.Module, integrator: Integrator) -> None:
+        self.potential_manifold = potential_manifold
+        self.integrator = integrator
+
+    def sample(
+        self, x_init: Tensor, ints: Tensor, steps: int, **pm_extras
+    ) -> tuple[Tensor, Tensor]:
+        """Integrates the point in vector space using the potential field along the probability path
 
         Args:
-            seeker (Seeker): seeker that searches for the time at which x is most probable
-            x (Tensor): points to classify, size (B, D...)
-            log_p0 (Callable[[Tensor], Tensor]): function that calculates the log probability at t=0
-            interval (tuple[float, float]): interval in which to search for classes
-            steps (int, optional): number of ODE steps. Defaults to 10.
-            est_steps (int, optional): number of log prob estimation steps. Defaults to 1.
-            eps (float, optional): minimum subinterval size under which not to search anymore.
-                Defaults to 1e-3.
+            x_init (Tensor): initial condition of the Process
+            ints (Tensor): start and end time points for each point in x_init
+            steps (int): number of steps for the Process Integrator
+
+        Returns:
+            tuple[Tensor, Tensor]: (steps+1, B, 1) of time
+            and (steps+1, B, D...) of solution trajectories
         """
 
-        def score_func(upper_t: Tensor) -> Tensor:
-            ints = torch.zeros((upper_t.shape[0], 2), dtype=x.dtype, device=x.device)
-            ints[:, 0] = upper_t
+        def diff_eq(t: Tensor, x: list[Tensor]) -> list[Tensor]:
+            _x = x[0]
 
-            # in case there is more to search than there are x in batch
-            _, log_p = self.compute_likelihood(
-                x.repeat_interleave(upper_t.shape[0] // x.shape[0], dim=0),
-                ints,
-                log_p0,
-                steps=steps,
-                est_steps=est_steps,
-                **vf_extras
+            _x.requires_grad_()  # to get the velocity we need to allow _x to have grads
+            potential = self.potential_manifold(_x, t, **pm_extras)
+
+            with torch.set_grad_enabled(True):
+                velocity = gradient(potential, _x)
+
+            return [velocity]
+
+        with torch.no_grad():
+            t_traj, x_traj = self.integrator.integrate(
+                diff_eq, [x_init], ints, steps=steps
             )
 
-            # looking for max log_p is the same as minimizing -log_p
-            return -log_p
-
-        a = torch.zeros(x.shape[0], dtype=x.dtype, device=x.device) * interval[0]
-        b = torch.ones(x.shape[0], dtype=x.dtype, device=x.device) * interval[1]
-
-        min_t, min_p = seeker.search(score_func, a, b, eps=eps)
-
-        # -min_p because the function is inverted to find the minimum
-        return min_t, -min_p
+        return t_traj, x_traj[0]
