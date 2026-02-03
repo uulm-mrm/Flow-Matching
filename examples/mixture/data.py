@@ -10,7 +10,7 @@ def get_pdata() -> tuple[MultivariateNormal, MultivariateNormal]:
     mean2 = torch.tensor([-6.0, -6.0])
 
     # large variance in x  # small variance in y
-    cov = torch.tensor([[1.0, 0.0], [0.0, 0.05]])
+    cov = torch.tensor([[1.0, 0.0], [0.0, 1.0]])
 
     return MultivariateNormal(mean1, cov), MultivariateNormal(mean2, cov)
 

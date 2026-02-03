@@ -3,9 +3,7 @@ import os
 import torch
 
 import matplotlib.pyplot as plt
-from matplotlib.collections import LineCollection
-
-import numpy as np
+import matplotlib.animation as animation
 
 from flow_matching import ODEProcess, RungeKuttaIntegrator
 from flow_matching.integrator_utils import RK4_TABLEAU
@@ -29,8 +27,8 @@ def main():
         vf, integrator=RungeKuttaIntegrator(tableu=RK4_TABLEAU, device=device)
     )
 
-    _x = torch.linspace(-5.0, 5.0, 100)
-    _y = torch.linspace(-5.0, 5.0, 100)
+    _x = torch.linspace(-10.0, 10.0, 100)
+    _y = torch.linspace(-10.0, 10.0, 100)
     _x, _y = torch.meshgrid(_x, _y, indexing="ij")
     x = torch.stack([_x, _y], dim=-1)
     x = x.reshape(-1, 2).to(device)
@@ -40,36 +38,45 @@ def main():
     t = t.expand(x.shape[0], 2)
 
     # integrate to get xt
-    t_trajectory, x_trajectory = process.sample(x, t, steps=10)
+    t_trajectory, x_trajectory = process.sample(x, t, steps=100)
 
     t = t_trajectory.detach().cpu().numpy()  # [t, samples, 1]
-    t = t[:, 0].flatten()  # [t,]
-
     xt = x_trajectory.detach().cpu().numpy()  # [t, samples, 2]
 
-    plt.figure(figsize=(5, 5))
+    T, _, _ = xt.shape
+    grid_size = 100  # since you created 100x100 grid
 
-    for i in range(xt.shape[1]):
-        x = xt[:, i, 0]
-        y = xt[:, i, 1]
+    fig, ax = plt.subplots()
 
-        points = np.stack([x, y], axis=1)
-        segments = np.stack([points[:-1], points[1:]], axis=1)
+    # Precompute global axis limits so they don't jump during animation
+    xmin = xt[..., 0].min()
+    xmax = xt[..., 0].max()
+    ymin = xt[..., 1].min()
+    ymax = xt[..., 1].max()
 
-        lc = LineCollection(
-            segments,  # type: ignore
-            cmap="viridis",
-            array=t,
-            linewidth=0.5,
-            alpha=0.2,
-        )
-        plt.gca().add_collection(lc)
+    ax.set_xlim(xmin, xmax)
+    ax.set_ylim(ymin, ymax)
+    ax.set_aspect("equal")
 
-    plt.xlim((-5, 5))
-    plt.ylim((-5, 5))
-    plt.title("Flow trajectories over time")
-    plt.tight_layout()
+    def update(frame):
+        ax.clear()
 
+        _x = xt[frame, :, 0].reshape(grid_size, grid_size)
+        _y = xt[frame, :, 1].reshape(grid_size, grid_size)
+
+        # horizontal lines
+        ax.plot(_x, _y, linewidth=0.5, c="black")
+        # vertical lines
+        ax.plot(_x.T, _y.T, linewidth=0.5, c="black")
+
+        ax.set_xlim(xmin, xmax)
+        ax.set_ylim(ymin, ymax)
+        ax.set_aspect("equal")
+        ax.set_title(f"t index = {frame}")
+
+    ani = animation.FuncAnimation(fig, update, frames=T, interval=200, blit=False)  # type: ignore
+    writer = animation.PillowWriter(fps=60)
+    ani.save("delta_flow_evolution.gif", writer=writer)
     plt.show()
 
 

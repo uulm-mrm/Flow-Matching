@@ -6,11 +6,11 @@ import matplotlib.pyplot as plt
 
 
 def get_pdata() -> tuple[MultivariateNormal, MultivariateNormal]:
-    mean1 = torch.tensor([3.0, 0.0])
-    mean2 = torch.tensor([0.0, 3.0])
+    mean1 = torch.tensor([6.0, 6.0])
+    mean2 = torch.tensor([-6.0, -6.0])
 
     # large variance in x  # small variance in y
-    cov = torch.tensor([[0.3, 0.0], [0.0, 0.3]])
+    cov = torch.tensor([[1.0, 0.0], [0.0, 1.0]])
 
     return MultivariateNormal(mean1, cov), MultivariateNormal(mean2, cov)
 
