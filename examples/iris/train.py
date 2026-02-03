@@ -1,3 +1,5 @@
+# pylint: disable=E1102
+
 import os
 
 from tqdm import tqdm
@@ -5,36 +7,68 @@ from tqdm import tqdm
 import torch
 from torch.utils.data import DataLoader
 from torch import Tensor
+from torch.nn import functional as F
 
 from flow_matching import AffinePath
 from flow_matching.scheduler import CosineScheduler
 from modules.utils import EMA
 
-from examples.iris.net import VectorField
+from examples.iris.net import PotentialField
 from examples.iris.data import IrisDataset
+from examples.iris.utils import gradient
 
-"""
-Maybe the vectorfield around the place of all input data is quite large and pointing towards the only dirac
-somehow try to make the space super small around the known data, see if you can control it somehow
-Anything that isn't in the known classes should flow outwards, not inward
 
-If you were to plot it, there would be like a white hole around where the data is
-followed by lines going towards the dirac deltas in a corridor
-followed by a black hole around the dirac deltas near the end of time
+# the ordinary loss for the learned vector field
+def get_data_loss(x: Tensor, y: Tensor, pf: PotentialField, path: AffinePath) -> Tensor:
+    # sample t
+    t = torch.rand((x.shape[0],), dtype=x.dtype, device=x.device)
 
-So try to make this corridor as small as possible, and try to make the holes as small as possible
-only for the things from ID to flow correctly, rest are in a repulsive field!!!
-"""
+    # sample path for xt
+    path_sample = path.sample(x, y, t)
+    xt = path_sample.xt.detach().requires_grad_(True)
 
-"""
-New goal:
-1. sample t
-2. sample x, y
-3. sample path for xt
-4. NEW STEP: network -> energy
-5. NEW STEP: grad of energy = predicted velocity
-6. (dxt - vt)**2 / n
-"""
+    # get potential
+    potential = pf.forward(xt, t.unsqueeze(1))
+
+    # get speed as the negative gradient of the potential
+    dxt_hat = -gradient(potential.sum(), xt, create_graph=True)
+
+    # get difference between speeds
+    return (dxt_hat - path_sample.dxt).square().mean()
+
+
+# cos sim + grad norm
+# grad norm to push them outward slowly and not mega quickly
+# and also for it to be easily overridden by data loss
+def get_noise_loss(
+    x: Tensor, y: Tensor, pf: PotentialField, path: AffinePath
+) -> Tensor:
+    # sample x noise from U[-10, 10]
+    x_noise = torch.empty_like(x).uniform_(-10.0, 10.0)
+
+    # sample time for it
+    t = torch.rand((x.shape[0],), dtype=x.dtype, device=x.device)
+
+    # sample noise path
+    noise_path_sample = path.sample(x_noise, y, t)
+    xt_noise = noise_path_sample.xt.detach().requires_grad_(True)
+
+    # get velocity of noise
+    potential = pf.forward(xt_noise, t.unsqueeze(1))
+    dxt_noise = -gradient(potential.sum(), xt_noise, create_graph=True)
+
+    grad_norm = dxt_noise.norm(2, dim=-1)
+
+    # grad loss is E[(||Fi|| - 1)^2] try to minimize this
+    grad_loss = (grad_norm - 1.0).square().mean()
+
+    # try to also minimize cos sim for noise, so it flows "away" from target
+    # since cossim is [-1, 1] minimizing it means "flow away"
+    cos_sim = F.cosine_similarity(dxt_noise, noise_path_sample.dxt, dim=-1).mean()
+
+    # return the total loss of noise
+    grad_lambda = 0.1
+    return cos_sim + grad_lambda * grad_loss
 
 
 def main():
@@ -42,40 +76,41 @@ def main():
     torch.set_printoptions(precision=4, sci_mode=False)
 
     # consts
-    device = "cpu"
+    device = "cuda:0"
 
     in_dims = 4
-    h_dims = 512
+    h_dims = 256
 
     epochs = 5_000
     batch_size = 50
 
     # dataset
-    ds = IrisDataset(categories=(0,))
+    ds = IrisDataset(categories=(0, 1))
     dl = DataLoader(ds, batch_size=batch_size, shuffle=True, drop_last=True)
 
     # fm stuff
-    vf = VectorField(in_dims, h_dims, t_d=1).to(device)
-    ema = EMA(vf, rate=0.999)
+    pf = PotentialField(in_dims, h_dims, t_d=1).to(device)
+    ema = EMA(pf, rate=0.999)
 
     path = AffinePath(CosineScheduler())
 
-    optim = torch.optim.AdamW(vf.parameters(), lr=1e-3)
+    optim = torch.optim.AdamW(pf.parameters(), lr=1e-3)
 
     for _ in (pbar := tqdm(range(epochs))):
         epoch_loss = 0.0
 
         for x, y in dl:
             optim.zero_grad()
+
+            # sample x, y
             x: Tensor = x.to(device)
             y: Tensor = y.to(device)
 
-            t = torch.rand((batch_size,), dtype=torch.float32, device=device)
+            # track these losses over time and see which does what
+            loss_data = get_data_loss(x, y, pf, path)
+            loss_noise = get_noise_loss(x, y, pf, path)
 
-            path_sample = path.sample(x, y, t)
-            dxt_hat = vf.forward(path_sample.xt, t.unsqueeze(1))
-
-            loss = (dxt_hat - path_sample.dxt).square().mean()
+            loss = loss_data + loss_noise
 
             loss.backward()
             optim.step()
@@ -87,9 +122,9 @@ def main():
         pbar.set_description(f"Loss: {epoch_loss:.4f}")
 
     ema.to_model()
-    vf = vf.eval()
+    pf = pf.eval()
 
-    torch.save(vf.state_dict(), os.path.join(os.path.dirname(__file__), "trained.pt"))
+    torch.save(pf.state_dict(), os.path.join(os.path.dirname(__file__), "trained.pt"))
 
 
 if __name__ == "__main__":

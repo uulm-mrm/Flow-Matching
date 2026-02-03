@@ -210,11 +210,12 @@ class PotentialProcess:
         def diff_eq(t: Tensor, x: list[Tensor]) -> list[Tensor]:
             _x = x[0]
 
-            _x.requires_grad_()  # to get the velocity we need to allow _x to have grads
-            potential = self.potential_manifold(_x, t, **pm_extras)
+            # to get the velocity we need to allow _x to have grads
+            _x.requires_grad_(True)
 
             with torch.set_grad_enabled(True):
-                velocity = gradient(potential, _x)
+                potential: Tensor = self.potential_manifold.forward(_x, t, **pm_extras)
+                velocity = -gradient(potential.sum(), _x)
 
             return [velocity]
 

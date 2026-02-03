@@ -2,7 +2,7 @@ import torch
 from torch import nn, Tensor
 
 
-class VectorField(nn.Module):
+class PotentialField(nn.Module):
     def __init__(self, in_d: int, h_d: int, t_d: int) -> None:
         super().__init__()
 
@@ -12,11 +12,11 @@ class VectorField(nn.Module):
         self.mlp = nn.Sequential(
             nn.Linear(in_d + t_d, h_d),
             nn.SiLU(),
-            nn.Linear(h_d, h_d),
+            nn.Linear(h_d, 2 * h_d),
             nn.SiLU(),
-            nn.Linear(h_d, h_d),
+            nn.Linear(2 * h_d, h_d // 2),
             nn.SiLU(),
-            nn.Linear(h_d, in_d),
+            nn.Linear(h_d // 2, 1),
         )
 
     def forward(self, xt: Tensor, t: Tensor) -> Tensor:

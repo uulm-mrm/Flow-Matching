@@ -5,6 +5,30 @@ from torch import Tensor
 import torch.nn.functional as F
 
 
+def gradient(y: Tensor, x: Tensor, create_graph: bool = False) -> Tensor:
+    """Calculate the gradient of y with respec to x
+    Wrapper function for torch.autograd.grad for ease of use
+
+    Initiates grad_outputs as ones, and doesn't create the graph by default
+
+    Args:
+        y (Tensor): the output of a function to take grad from
+        x (Tensor): the input to the function to take grad w.r.t
+        create_graph (Tensor): whether to create graph or not
+
+    Returns:
+        Tensor: grad of y w.r.t x
+    """
+
+    grad_outputs = torch.ones_like(y).detach()
+
+    grad = torch.autograd.grad(
+        y, x, grad_outputs=grad_outputs, create_graph=create_graph
+    )[0]
+
+    return grad
+
+
 def cosine_similarity(sols: Tensor, deltas: Tensor) -> Tensor:
     """Returns cosine similarity between process solutions and dirac deltas
     that the solutions target
