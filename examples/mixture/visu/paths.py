@@ -76,7 +76,7 @@ def main():
 
     ani = animation.FuncAnimation(fig, update, frames=T, interval=200, blit=False)  # type: ignore
     writer = animation.PillowWriter(fps=60)
-    ani.save("flow_evolution.gif", writer=writer)
+    ani.save("mixture_flow_evolution.gif", writer=writer)
     plt.show()
 
 
