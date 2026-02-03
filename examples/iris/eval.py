@@ -6,7 +6,7 @@ from flow_matching import PotentialProcess, RungeKuttaIntegrator, tableaus
 
 from examples.iris.data import IrisDataset, WineDataset
 from examples.iris.net import PotentialField
-from examples.iris.utils import cosine_similarity, norm_decay, credal_measures
+from examples.iris.utils import cosine_similarity, norm_decay
 
 
 def main():
@@ -42,8 +42,8 @@ def main():
     # calculate energies of points at t=1
     t = torch.zeros((x_init.shape[0], 1), device=device, dtype=torch.float32)
     energies = pf.forward(x_init, t)
-    # print("ID Energies:\n", energies[: x_id.shape[0]].chunk(len(id_ds.categories)))
-    # print("OOD Energies:\n", energies[x_id.shape[0] :].chunk(len(ood_ds.categories)))
+    print("ID Energies:\n", energies[: x_id.shape[0]].chunk(len(id_ds.categories)))
+    print("OOD Energies:\n", energies[x_id.shape[0] :].chunk(len(ood_ds.categories)))
 
     # solve process
     intervals = torch.tensor([[0.0, 1.0]], dtype=torch.float32, device=device)
@@ -58,12 +58,12 @@ def main():
     deltas = torch.zeros((3, in_dims), dtype=torch.float32, device=device)
     deltas[:, :3] = torch.eye(3, dtype=torch.float32, device=device)
     sims = cosine_similarity(sols, deltas)
-    # print("ID Similarities:\n", sims[: x_id.shape[0]].chunk(len(id_ds.categories)))
-    # print("OOD Similarities:\n", sims[x_id.shape[0] :].chunk(len(ood_ds.categories)))
+    print("ID Similarities:\n", sims[: x_id.shape[0]].chunk(len(id_ds.categories)))
+    print("OOD Similarities:\n", sims[x_id.shape[0] :].chunk(len(ood_ds.categories)))
 
     quality = norm_decay(sols)
-    # print("ID Quality:\n", quality[: x_id.shape[0]].chunk(len(id_ds.categories)))
-    # print("OOD Quality:\n", quality[x_id.shape[0] :].chunk(len(ood_ds.categories)))
+    print("ID Quality:\n", quality[: x_id.shape[0]].chunk(len(id_ds.categories)))
+    print("OOD Quality:\n", quality[x_id.shape[0] :].chunk(len(ood_ds.categories)))
 
 
 if __name__ == "__main__":
